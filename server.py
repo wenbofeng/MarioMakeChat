@@ -412,7 +412,7 @@ def auto_backup():
     except Exception as e:
         print(f"⚠️ 备份失败：{e}")
 
-BASE = "/Users/pp/Desktop/MarioMakeChat/master"
+BASE = os.path.join(os.path.dirname(__file__), "master")
 
 AVAILABLE_MODELS = {
     "1.5B Q4_K_M": f"{BASE}/qwen2.5-1.5b-instruct-q4_k_m.gguf",

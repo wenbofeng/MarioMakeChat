@@ -1,5 +1,11 @@
 # 墨墨AI（Mario Make AI）· 本地助手
 
+<p align="center">
+  <img src="screenshots/main.png" width="48%">
+  <img src="screenshots/chat.png" width="48%">
+</p>
+
+
 > 中文名「墨墨」，英文名「Mario Make」
 > M /m/（墨）· M /m/（墨）AI —— 一个住在你电脑里的本地 AI。
 

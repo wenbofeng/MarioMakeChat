@@ -201,6 +201,16 @@ MarioMakeChat/
 
 ---
 
+
+## ⚠️ 已知限制
+
+- **无一键安装**：需手动装 conda、下载 GGUF 模型、安装 tesseract / ffmpeg
+- **纯 CPU 推理**：3B 模型约 5-15 tokens/s，无 GPU 加速
+- **生图走 Pollinations**：需联网，不是纯离线
+- **仅在 macOS 测试**：Linux / Windows 未验证
+- **首次启动较慢**：加载模型 + RAG 嵌入约 10-30 秒
+- **Ollama 思考模型需另装**：`ollama pull qwen3:1.7b`
+
 ## 🚀 快速开始
 
 ### 1. 环境准备
@@ -1112,6 +1122,16 @@ MarioMakeChat/
 ```
 
 ---
+
+
+## ⚠️ 已知限制
+
+- **无一键安装**：需手动装 conda、下载 GGUF 模型、安装 tesseract / ffmpeg
+- **纯 CPU 推理**：3B 模型约 5-15 tokens/s，无 GPU 加速
+- **生图走 Pollinations**：需联网，不是纯离线
+- **仅在 macOS 测试**：Linux / Windows 未验证
+- **首次启动较慢**：加载模型 + RAG 嵌入约 10-30 秒
+- **Ollama 思考模型需另装**：`ollama pull qwen3:1.7b`
 
 ## 🚀 快速开始
 

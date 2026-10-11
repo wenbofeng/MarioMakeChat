@@ -1,0 +1,53 @@
+# 模型（大文件）
+master/
+*.gguf
+
+# 用户数据
+users/
+
+# 备份
+backups/
+
+# 知识库缓存（内容可重新生成）
+docs/.rag_cache.npz
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# 系统
+.DS_Store
+Thumbs.db
+
+# 日志
+*.log
+/tmp/mmai.log
+
+# 编辑器和 IDE
+.vscode/
+.idea/
+
+# 备份和临时文件
+*.bak
+*.bak2
+*.bak3
+*.broken
+*.old
+*.tmp
+
+# 测试
+test.py
+
+# 本地脚本（含绝对路径）
+other/
+
+*.bak
+*.bak2
+*.bak3
+*.broken
+*.old
+*.tmp
+test.py
+other/

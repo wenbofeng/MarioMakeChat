@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>墨墨AI · Mario Make</title>
+<link rel="icon" href="/static/favicon.png" type="image/png">
+<script src="/static/marked.min.js"></script>
+<script src="/static/highlight.min.js"></script>
+<script src="/static/html2canvas.min.js"></script>
+<link rel="stylesheet" href="/static/style.css?v=24">
+</head>
+<body>
+<header>
+  <h1>墨墨AI · v8.7.0 BigBug Official</h1>
+  <div class="header-actions">
+    <div class="user-menu-wrap">
+      <button id="userBtn" onclick="toggleUserMenu(event)">👤 <span id="userLabel">default</span> ▼</button>
+      <div id="userDropdown"></div>
+    </div>
+    <button onclick="toggleMsgSearch()" title="对话内搜索 (Cmd+Shift+F)">🔍</button>
+    <button onclick="toggleStatusPanel()" title="系统状态">📊 状态</button>
+    <button onclick="toggleShortcutPanel()" title="快捷键">⌨️</button>
+    <button onclick="exportAsImage()" title="导出对话为图片">📸 导出图片</button>
+      <button onclick="shareConversation()" title="分享对话">🔗 分享</button>
+      <button onclick="exportAsPDF()" title="导出对话为 PDF">📄 PDF</button>
+    <button id="themeBtn" onclick="toggleTheme()" title="切换主题">🌙</button>
+    <button onclick="resetChat()">清空记忆</button>
+    <button onclick="reloadAll()" title="重载设置 / 知识库 / 模型">🔄 重载</button>
+  </div>
+</header>
+
+<div id="msgSearchBar" style="display:none;">
+  <input type="text" id="msgSearchInput" placeholder="在对话中查找…">
+  <span id="msgSearchCount">0 / 0</span>
+  <button id="msgSearchPrev" title="上一个">↑</button>
+  <button id="msgSearchNext" title="下一个">↓</button>
+  <button id="msgSearchClose" title="关闭 (Esc)">✕</button>
+</div>
+
+<div class="layout">
+  <aside id="sidebar">
+    <input type="text" id="searchBox" placeholder="🔍 搜索历史..." oninput="doSearch(this.value)">
+    <button class="new-btn" onclick="newSession()">＋ 新对话</button>
+      <button class="new-btn" id="tempBtn" style="background:var(--btn-bg);" onclick="toggleTemp()">⚡ 临时对话</button>
+    <button class="new-btn" style="background:var(--btn-bg);" onclick="exportCurrent()">📥 导出当前对话</button>
+    <button class="new-btn" style="background:var(--btn-bg);" onclick="reloadRag(event)">🔄 重载知识库</button>
+    <button class="new-btn" style="background:var(--btn-bg);" onclick="openPromptModal()">⚙️ 修改人设</button>
+    <button class="new-btn" style="background:var(--btn-bg);" onclick="openStyleModal()">✍️ 创作设置</button>
+    <button class="new-btn danger-btn" onclick="clearSessions()">🗑️ 清空未置顶</button>
+    <div id="ragStatus"></div>
+
+    <!-- 参数滑杆 -->
+    <div class="param-panel">
+      <div class="param-title">🎛️ 模型参数</div>
+      <label>Temperature <span class="param-val" id="tempVal">0.70</span>
+        <input type="range" id="tempSlider" min="0" max="1.5" step="0.05" value="0.7">
+      </label>
+      <label>Top-P <span class="param-val" id="topPVal">0.90</span>
+        <input type="range" id="topPSlider" min="0.1" max="1" step="0.05" value="0.9">
+      </label>
+      <label>Max Tokens <span class="param-val" id="maxTokVal">500</span>
+        <input type="range" id="maxTokSlider" min="100" max="2000" step="50" value="500">
+      </label>
+    </div>
+
+      <div class="template-title" style="margin-top:8px;">🎨 主题色调</div>
+<div class="theme-color-picker" id="themeColorPicker">
+  <span class="color-dot" data-color="blue"   title="蓝"></span>
+  <span class="color-dot" data-color="purple" title="紫"></span>
+  <span class="color-dot" data-color="green"  title="绿"></span>
+  <span class="color-dot" data-color="orange" title="橙"></span>
+  <span class="color-dot" data-color="pink"   title="粉"></span>
+  <span class="color-dot" data-color="cyan"   title="青"></span>
+</div>
+
+      <div class="template-title" style="margin-top:8px;">🔤 字号</div>
+<div id="fontSizePanel">
+  <button onclick="changeFontSize(-1)">A-</button>
+  <span class="fs-label" id="fsLabel">标准</span>
+  <button onclick="changeFontSize(1)">A+</button>
+</div>
+
+    <div class="template-title" style="display:flex;justify-content:space-between;align-items:center;">
+      <span>⭐ 收藏</span>
+      <span id="favCount" style="font-size:10px;color:var(--text-muted);"></span>
+    </div>
+    <ul id="favList" style="list-style:none;margin-bottom:8px;"></ul>
+
+    <div class="template-title">快捷提问</div>
+      <div class="template-title" style="display:flex;justify-content:space-between;align-items:center;">
+      <span>📁 文件夹</span>
+      <span onclick="newFolder()" title="新建文件夹"
+            style="cursor:pointer;color:var(--accent);font-weight:700;">＋</span>
+    </div>
+    <ul id="folderList" style="list-style:none;margin-bottom:8px;"></ul>
+    <div id="templateList"></div>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin:6px 0;">
+  <span style="font-size:11px;color:var(--text-muted);">💬 会话</span>
+  <span id="manualSortToggle" onclick="toggleManualSort()"
+        style="cursor:pointer;font-size:11px;color:var(--accent);user-select:none;">
+    手动排序
+  </span>
+</div>
+    <ul id="sessionList"></ul>
+  </aside>
+  <main style="position: relative;">
+  <div id="chat"></div>
+  <div id="outline"></div>
+  </main>
+</div>
+
+<footer>
+  <select id="modelSelect" title="选择模型"></select>
+  <label for="fileUpload" class="upload-label" title="上传文件">📎</label>
+  <input type="file" id="fileUpload" style="display:none;"
+         accept=".pdf,.docx,.pptx,.txt,.md,.py,.js,.json,.html,.css,.png,.jpg,.jpeg,.webp">
+  <button id="micBtn" class="icon-btn" title="语音输入" onclick="toggleVoice()">🎤</button>
+    <button id="thinkBtn" class="icon-btn" title="思考模式：自动" onclick="toggleThink()">🧠</button>
+    <button id="callBtn" class="icon-btn" title="语音通话模式" onclick="toggleCall()">🎙️</button>
+  <textarea id="input" rows="1" placeholder="给 Mario 发送消息" autocomplete="off"></textarea>
+  <label><input type="checkbox" id="web"> 强制联网</label>
+  <label><input type="checkbox" id="autoSpeak"> 自动朗读</label>
+  <button id="send" class="send-btn" onclick="send()">发送</button>
+  <button id="stopBtn" class="send-btn" style="display:none;" onclick="stopGeneration()">停止</button>
+</footer>
+
+<div id="adminModal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.6); z-index:9999; align-items:center; justify-content:center;">
+  <div class="modal-box" style="max-height:80vh; overflow-y:auto;">
+    <div id="adminModalContent"></div>
+    <div style="text-align:right; margin-top:12px;">
+      <button class="modal-btn" onclick="closeAdminModal()">关闭</button>
+    </div>
+  </div>
+</div>
+
+<div id="promptModal">
+  <div class="modal-box">
+    <h2>⚙️ 修改 AI 人设</h2>
+    <p>修改后立即生效，建议保留原有的安全约束。</p>
+    <textarea id="promptTextarea"></textarea>
+    <div style="display:flex; gap:10px; justify-content:space-between;">
+      <button class="modal-btn" onclick="resetPrompt()">恢复默认</button>
+      <div style="display:flex; gap:10px;">
+        <button class="modal-btn" onclick="closePromptModal()">取消</button>
+        <button class="modal-btn primary" onclick="savePrompt()">保存</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="/static/app.js?v=27"></script>
+
+<link id="hljs-theme" rel="stylesheet" href="/static/github-dark.min.css">
+<div id="styleModal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.6); z-index:9999; align-items:center; justify-content:center;">
+  <div class="modal-box" style="max-height:80vh; overflow-y:auto; width:640px;">
+    <h2 style="font-size:16px;">✍️ 个性化创作设置</h2>
+    <p style="font-size:12px; color:var(--text-muted);">告诉墨墨你的写作偏好，它会按这个风格生成内容。</p>
+    <div style="display:flex; flex-direction:column; gap:12px; margin-top:12px;">
+      <div>
+        <label style="font-size:13px;">语气</label>
+        <select id="styleTone" style="width:100%; padding:8px; margin-top:4px; border-radius:6px; background:var(--bg-input); color:var(--text); border:1px solid var(--border);">
+          <option value="casual">😊 轻松口语</option>
+          <option value="formal">🎩 正式专业</option>
+          <option value="humorous">🤣 幽默俏皮</option>
+          <option value="serious">🧊 严肃理性</option>
+        </select>
+      </div>
+      <div>
+        <label style="font-size:13px;">长度</label>
+        <select id="styleLength" style="width:100%; padding:8px; margin-top:4px; border-radius:6px; background:var(--bg-input); color:var(--text); border:1px solid var(--border);">
+          <option value="short">📏 简短直接</option>
+          <option value="medium">📐 适中</option>
+          <option value="long">📚 详细展开</option>
+        </select>
+      </div>
+      <label style="display:flex; align-items:center; gap:8px; font-size:13px;">
+        <input type="checkbox" id="styleEmoji"> 允许使用 emoji
+      </label>
+      <div>
+        <label style="font-size:13px;">📖 个人词典（每行一条：词语=含义）</label>
+        <textarea id="glossaryText" style="width:100%; height:100px; padding:8px; margin-top:4px; border-radius:6px; background:var(--bg-input); color:var(--text); border:1px solid var(--border); font-size:13px; font-family:monospace;" placeholder="MMAI=墨墨 AI 的缩写&#10;FMC SMO=我的笔名"></textarea>
+      </div>
+    </div>
+    <div style="display:flex; gap:10px; justify-content:flex-end; margin-top:16px;">
+      <button class="modal-btn" onclick="closeStyleModal()">取消</button>
+      <button class="modal-btn primary" onclick="saveStyle()">保存</button>
+    </div>
+  </div>
+</div>
+
+<!-- v7.0.0 快捷键面板 -->
+<div id="shortcutModal" class="shortcut-mask">
+  <div class="shortcut-box">
+    <h3>⌨️ 快捷键</h3>
+    <table class="shortcut-table" id="shortcutTable"></table>
+<div class="close-row">
+  <button class="modal-btn" onclick="resetShortcuts()" style="margin-right:8px;">恢复默认</button>
+  <button class="modal-btn" onclick="toggleShortcutPanel()">关闭</button>
+</div>
+      <tr><td>Control + ⌥ + N</td><td>新对话</td></tr>
+      <tr><td>Control + ⇧ + S</td><td>聚焦搜索</td></tr>
+      <tr><td>Control + S</td><td>保存对话</td></tr>
+      <tr><td>Control + Enter</td><td>发送</td></tr>
+      <tr><td>Enter</td><td>发送（输入框内）</td></tr>
+      <tr><td>Shift + Enter</td><td>换行（输入框内）</td></tr>
+      <tr><td>Esc</td><td>停止生成 / 关闭面板</td></tr>
+      <tr><td>Command + D</td><td>切回 default 管理员</td></tr>
+      <tr><td>/</td><td>快速聚焦搜索</td></tr>
+      <tr><td>?</td><td>打开本面板</td></tr>
+    </table>
+    <div class="close-row">
+      <button class="modal-btn" onclick="toggleShortcutPanel()">关闭</button>
+    </div>
+  </div>
+</div>
+
+<!-- v7.0.0 系统状态面板 -->
+<div id="statusPanel" class="status-panel" style="display:none">
+  <div class="status-row"><span class="status-key">🧠 模型</span><span class="status-val" id="stModel">-</span></div>
+  <div class="status-row"><span class="status-key">🔥 CPU</span><span class="status-val" id="stCpu">-</span></div>
+  <div class="status-row"><span class="status-key">💾 内存</span><span class="status-val" id="stMem">-</span></div>
+  <div class="status-row"><span class="status-key">📦 进程占用</span><span class="status-val" id="stProc">-</span></div>
+  <div class="status-row"><span class="status-key">⏱️ 运行</span><span class="status-val" id="stUp">-</span></div>
+</div>
+
+<!-- v7.0.0 翻译气泡 -->
+<div id="transBubble">
+  <span class="close-x" onclick="document.getElementById('transBubble').style.display='none'">✕</span>
+  <button id="doTransBtn">🌐 翻译</button>
+  <div id="transResult"></div>
+</div>
+<div id="quoteMenu" style="display:none;"></div>
+<div id="modelPanel" style="display:none;"></div>
+</body>
+</html>

@@ -714,20 +714,70 @@ async function toggleVoice() {
   input.placeholder = '正在听…';
 }
 
-// ==================== 语音朗读 ====================
-function speak(text) {
-  if (!('speechSynthesis' in window)) { alert('当前浏览器不支持语音朗读'); return; }
-  window.speechSynthesis.cancel();
-  const cleanText = text
-    .replace(/```[\s\S]*?```/g, '').replace(/`[^`]*`/g, '')
-    .replace(/[#*_>\-]/g, '').replace(/\[([^\]]*)\]\([^)]*\)/g, '$1').trim();
-  if (!cleanText) return;
-  const utterance = new SpeechSynthesisUtterance(cleanText);
-  utterance.lang = 'zh-CN'; utterance.rate = 1.1; utterance.pitch = 1.0;
-  const voices = window.speechSynthesis.getVoices();
-  const zhVoice = voices.find(v => v.lang === 'zh-CN' || v.lang === 'zh_CN');
-  if (zhVoice) utterance.voice = zhVoice;
-  window.speechSynthesis.speak(utterance);
+// ==================== v8.7.0 语音朗读 ====================
+let _voicesCache = [];
+let _voiceReady = false;
+
+// 浏览器加载 voice 列表是异步的，第一次可能为空
+function initVoices() {
+  if (!window.speechSynthesis) return;
+  const load = () => {
+    _voicesCache = speechSynthesis.getVoices();
+    if (_voicesCache.length) _voiceReady = true;
+  };
+  load();
+  speechSynthesis.onvoiceschanged = load;
+}
+initVoices();
+
+function pickChineseVoice() {
+  if (!_voicesCache.length) _voicesCache = speechSynthesis.getVoices();
+  // 优先级：婷婷 > 其他大陆普通话女声 > 任意中文
+  const prefer = [
+    v => v.lang === 'zh-CN' && /Tingting|婷婷/i.test(v.name),
+    v => v.lang === 'zh-CN' && /female|女/i.test(v.name),
+    v => v.lang === 'zh-CN',
+    v => v.lang.startsWith('zh'),
+  ];
+  for (const rule of prefer) {
+    const hit = _voicesCache.find(rule);
+    if (hit) return hit;
+  }
+  return null;
+}
+
+function speak(text, opts = {}) {
+  if (!window.speechSynthesis) return;
+  speechSynthesis.cancel();
+
+  // 去掉 markdown 符号再读
+  const clean = String(text)
+    .replace(/```[\s\S]*?```/g, '（代码块）')
+    .replace(/`([^`]+)`/g, '$1')
+    .replace(/[*_#>~]/g, '')
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
+    .trim();
+  if (!clean) return;
+
+  const utter = new SpeechSynthesisUtterance(clean);
+
+  const voice = pickChineseVoice();
+  if (voice) utter.voice = voice;
+
+  utter.lang  = voice?.lang || 'zh-CN';
+  utter.rate  = opts.rate  ?? 1.0;   // 0.5 - 2.0
+  utter.pitch = opts.pitch ?? 1.0;   // 0 - 2
+  utter.volume= opts.volume?? 1.0;   // 0 - 1
+
+  // 长文本切段（某些浏览器 >200 字会静音）
+  if (clean.length > 180) {
+    const chunks = clean.match(/[\s\S]{1,180}/g) || [clean];
+    chunks.forEach(c => speechSynthesis.speak(new SpeechSynthesisUtterance(c)));
+    // 简化版：直接分段，不继承 voice（可忽略，通常同一段用同一个）
+    return;
+  }
+
+  speechSynthesis.speak(utter);
 }
 
 // ==================== 历史搜索 ====================

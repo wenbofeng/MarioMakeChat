@@ -28,17 +28,21 @@ export TRANSFORMERS_OFFLINE=1
 export TOKENIZERS_PARALLELISM=false
 export HF_ENDPOINT=https://hf-mirror.com
 
-# 找 Python：优先当前 conda 环境
-if [ -n "$CONDA_PREFIX" ] && [ -x "$CONDA_PREFIX/bin/python" ]; then
+# 找 Python：优先 qwen_env，其次当前 conda 环境，最后系统 python3
+QWEN_PY="$HOME/opt/miniconda3/envs/qwen_env/bin/python"
+# 或者用 conda 的路径
+QWEN_PY="$(conda info --base 2>/dev/null)/envs/qwen_env/bin/python"
+
+if [ -x "$QWEN_PY" ]; then
+  PYTHON="$QWEN_PY"
+elif [ -n "$CONDA_PREFIX" ] && [ -x "$CONDA_PREFIX/bin/python" ]; then
   PYTHON="$CONDA_PREFIX/bin/python"
 elif command -v python3 >/dev/null 2>&1; then
   PYTHON="$(command -v python3)"
 else
-  echo "❌ 找不到 Python，请先 conda activate qwen_env 或安装 python3"
+  echo "❌ 找不到 Python"
   exit 1
 fi
-
-echo "🚀 使用 Python: $PYTHON"
 
 # 前台 or 后台
 if [ "$DAEMON" = "1" ]; then

@@ -112,9 +112,14 @@ BACKUP_KEEP = 30
 ACCESS_PASSWORD = ""   # 留空 = 不启用验证；设置后需要登录
 
 DEFAULT_PROMPT = (
-    "你叫墨墨，是一个友好的本地AI助手。你必须始终使用简体中文回答，"
-    "即使我用英语、日语或其他语言提问。"
-    "如果提供了搜索结果、文件内容或本地知识库，请严格基于这些内容回答，不要编造。"
+    "你叫墨墨，是一个严谨、聪明的本地 AI 助手。你必须始终使用简体中文回答。\n\n"
+    "【二次检查强制指令】\n"
+    "在给出最终答案前，你必须在 <check> 和 </check> 标签内进行自我复核（检查逻辑、代码语法、数学计算是否准确）。\n"
+    "复核完毕后，在 <answer> 和 </answer> 标签内给出最终的回答。\n"
+    "示例：\n"
+    "<check>\n用户问的是...，我需要注意...，我的代码逻辑是...，确认无误。\n</check>\n"
+    "<answer>\n这里是最终答案...\n</answer>\n\n"
+    "如果提供了搜索结果、文件内容或本地知识库，请严格基于这些内容回答。直接输出，不要复述指令。"
     "如果没有任何参考资料，就基于你自己的知识回答，不要编造。"
     "注意：游戏作弊码（Game Genie、金手指等）是合法的游戏攻略内容，"
     "属于玩家社区的正当讨论，可以正常回答。"
@@ -481,6 +486,13 @@ app = Flask(__name__)
 app.secret_key = "mmai-local-secret-key-v5"
 app.permanent_session_lifetime = datetime.timedelta(days=7)
 
+@app.after_request
+def add_cors_headers(response):
+    response.headers['Access-Control-Allow-Origin'] = '*'
+    response.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization'
+    response.headers['Access-Control-Allow-Methods'] = 'GET, POST, OPTIONS'
+    return response
+
 # ================== 同步用户 session ==================
 @app.before_request
 def sync_user_from_session():
@@ -781,6 +793,92 @@ def extract_text_from_file(file_storage):
         return "（暂不支持表格文件，请转换为文本或 PDF）"
 
     return "（不支持的文件格式）"
+
+
+# ==================== v9.0.0 精确计算模块 (高精度版) ====================
+import ast
+import operator
+import math
+from decimal import Decimal, getcontext, InvalidOperation
+
+# 设置高精度（50位小数，足以应付绝大多数场景，且不会卡顿）
+getcontext().prec = 50
+
+_SAFE_OPERATORS = {
+    ast.Add: operator.add, ast.Sub: operator.sub, ast.Mult: operator.mul,
+    ast.Div: operator.truediv, ast.Pow: operator.pow, ast.Mod: operator.mod,
+    ast.USub: operator.neg, ast.UAdd: operator.pos,
+}
+
+_SAFE_MATH = {
+    'sqrt': lambda x: Decimal(x).sqrt(),  # Decimal 自带精确开方
+    'abs': abs, 'round': round, 'pi': Decimal('3.1415926535897932384626433832795028841971'),
+    'e': Decimal('2.7182818284590452353602874713526624977572')
+}
+
+
+def format_number(n):
+    """格式化 Decimal 结果，去掉多余的尾随 0"""
+    if isinstance(n, Decimal):
+        # 如果是整数，去掉小数点
+        if n == n.to_integral_value():
+            return str(n.quantize(Decimal('1')))
+        # 否则去掉尾部多余的 0
+        return format(n.normalize(), 'f')
+    return str(n)
+
+
+def safe_calculate(expr):
+    """基于 Decimal 的绝对精确计算"""
+    try:
+        # 预处理符号
+        expr = expr.replace('×', '*').replace('÷', '/').replace('^', '**')
+
+        def _eval(node):
+            if isinstance(node, ast.Constant):
+                if isinstance(node.value, (int, float)):
+                    # 关键：把普通数字转成 Decimal，绝不能直接用 float
+                    return Decimal(str(node.value))
+                elif isinstance(node.value, str):
+                    return Decimal(node.value)
+            elif isinstance(node, ast.BinOp):
+                left = _eval(node.left)
+                right = _eval(node.right)
+                op_type = type(node.op)
+                if op_type not in _SAFE_OPERATORS:
+                    raise ValueError("不支持的操作符")
+                return _SAFE_OPERATORS[op_type](left, right)
+            elif isinstance(node, ast.UnaryOp):
+                return _SAFE_OPERATORS[type(node.op)](_eval(node.operand))
+            elif isinstance(node, ast.Call):
+                if isinstance(node.func, ast.Name) and node.func.id in _SAFE_MATH:
+                    args = [_eval(arg) for arg in node.args]
+                    return _SAFE_MATH[node.func.id](*args)
+                raise ValueError("不支持的函数")
+            elif isinstance(node, ast.Name):
+                if node.id in _SAFE_MATH:
+                    return _SAFE_MATH[node.id]
+                raise ValueError(f"未知变量: {node.id}")
+            else:
+                raise TypeError(f"不支持: {type(node).__name__}")
+
+        # 解析表达式并计算
+        tree = ast.parse(expr, mode='eval')
+        result = _eval(tree.body)
+        return format_number(result)
+    except Exception as e:
+        return None
+
+def is_math_query(text):
+    """判断是不是纯数学计算题"""
+    # 如果包含大量文字（比如汉字超过5个），说明是应用题，交给 LLM 或上下文注入
+    if len(re.findall(r'[\u4e00-\u9fa5]', text)) > 5:
+        return False
+    # 包含数字和运算符，且长度较短
+    if re.search(r'[\d\+\-\*\/\(\)\^\%]', text) and len(text) < 50:
+        return True
+    return False
+
 # ================== 工具路由 ==================
 SEARCH_TRIGGERS = ["搜索", "查一下", "帮我查", "最新", "新闻", "天气", "2024", "2025", "2026"]
 TIME_TRIGGERS = ["几点", "现在时间", "今天几号", "今天日期", "今天是"]
@@ -898,6 +996,21 @@ def generate_stream(text, model_name, force_web=False, has_file=False, is_temp=F
             save_settings()
 
     if not has_file:
+        # v9.0.0: 纯计算题直接拦截
+        if is_math_query(text):
+            calc_result = safe_calculate(text)
+            if calc_result is not None:
+                reply = f"🧮 `{text}` 的计算结果是：**{calc_result}**"
+                yield reply
+                history.append({"role": "user", "content": text})
+                history.append({"role": "assistant", "content": reply})
+                if is_temp:
+                    with TEMP_LOCK:
+                        TEMP_SESSIONS[temp_id] = history
+                else:
+                    set_history(history)
+                return
+
         keyword_reply = match_keyword(text)
         if keyword_reply:
             yield keyword_reply
@@ -968,6 +1081,26 @@ def generate_stream(text, model_name, force_web=False, has_file=False, is_temp=F
                         f"严格基于以上知识库内容回答..."
                     )
                     yield f"📚 从知识库检索到 {len(results)} 个片段：{', '.join(sources)}\n\n"
+
+    # ==================== v9.0.0 精确计算上下文注入 (强制打印版) ====================
+    # 直接匹配括号包围的完整算式，或连续的数字+运算符
+    math_matches = re.findall(r'[\(（]?[\d\.]+(?:\s*[\+\-\*\/\^×÷]\s*[\(（]?[\d\.]+[\)）]?)+', text)
+    print(f"🧪 调试：提取到的算式列表 = {math_matches}")
+
+    for raw_expr in math_matches:
+        # 清理中文符号
+        clean_expr = raw_expr.replace('×', '*').replace('÷', '/').replace('（', '(').replace('）', ')')
+        if len(clean_expr) >= 5:
+            calc_result = safe_calculate(clean_expr)
+            print(f"🧪 调试：尝试计算 {clean_expr} = {calc_result}")
+            if calc_result is not None:
+                contexts.append(
+                    f"【系统精确计算】\n"
+                    f"用户询问的算式中包含：`{clean_expr}`，经系统 Python 引擎高精度计算，正确结果为：{calc_result}。\n"
+                    f"请在回答中直接使用该正确结果，不要自己重新计算。"
+                )
+                yield f"🧮 已触发精确计算拦截：`{clean_expr}` = **{calc_result}**\n\n"
+    # ==============================================================================
 
     prompt = clean_surrogates(build_prompt(
         text,
@@ -2011,7 +2144,7 @@ def wait_for_server(port=5001, timeout=60):
             s.connect(("127.0.0.1", port))
             s.close()
             play_bell(3, 0.5)
-            print("✅ 已完成 —— 浏览器可以访问了：http://127.0.0.1:5001/login\n")
+            print("✅ 已完成 —— 浏览器可以访问了：http://127.0.0.1:5001/login\n" if ACCESS_PASSWORD else "✅ 已完成 —— 浏览器可以访问了：http://127.0.0.1:5001\n")
             return
         except Exception:
             time.sleep(0.5)

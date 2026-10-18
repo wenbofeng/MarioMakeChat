@@ -540,26 +540,51 @@ async function send(regen = false) {
         fullText = fullText.replace(/__EMOTION__:\w+\n/, '');
       }
 
-      // 思考阶段（<thinking> 未闭合）不做重复检测
+      // 思考阶段（<thinking> 或 <check> 未闭合）不做重复检测
       const inThinkingPhase = fullText.includes('<thinking>') && !fullText.includes('</thinking>');
-      if (!isOcrDirect && !inThinkingPhase && hasRepeatedPhrase(fullText)) {
+      const inCheckPhase = fullText.includes('<check>') && !fullText.includes('</check>');
+      // 统计代码块数量，如果正在写代码，禁止截断
+      const codeBlockCount = (fullText.match(/```/g) || []).length;
+      const inCodeBlock = codeBlockCount % 2 !== 0;
+
+      if (!isOcrDirect && !inThinkingPhase && !inCheckPhase && !inCodeBlock && hasRepeatedPhrase(fullText)) {
         truncated = true; break;
       }
-            if (fullText.includes('<thinking>') && !fullText.includes('</thinking>')) {
+              if (fullText.includes('<thinking>') && !fullText.includes('</thinking>')) {
         aiDiv.innerHTML = '<span class="thinking-live">💭 思考中<span class="thinking-dots"></span></span>';
-      } else if (fullText.includes('</thinking>')) {
-        const after = fullText.split('</thinking>').slice(1).join('</thinking>');
-        aiDiv.textContent = after.trim();
       } else {
         if (fullText.length > 0) aiDiv.classList.remove('streaming');
-        aiDiv.textContent = fullText;
+
+        // 获取去掉 thinking 后的文本
+        let renderText = fullText;
+        if (fullText.includes('</thinking>')) {
+          renderText = fullText.split('</thinking>').slice(1).join('</thinking>');
+        }
+
+        // 如果文本里包含了 check 标签，立刻调用 parseSelfCheck
+        if (renderText.includes('<check>') || renderText.includes('<answer>')) {
+           aiDiv.innerHTML = parseSelfCheck(renderText);
+        } else {
+           // 普通文本还是走 renderMarkdown
+           aiDiv.innerHTML = renderMarkdown(renderText);
+        }
       }
-      chat.scrollTop = chat.scrollHeight;
+
+        aiDiv.classList.remove('streaming');
+    // 把最终结果过一遍 parseSelfCheck
+    finalText = fullText;
+    if (fullText.includes('</thinking>')) {
+        finalText = fullText.split('</thinking>').slice(1).join('</thinking>');
     }
+    aiDiv.innerHTML = parseSelfCheck(finalText);
 
     aiDiv.classList.remove('streaming');
     const elapsed = Date.now() - (aiStartTs * 1000);
-    renderThinkingMsg(aiDiv, fullText, elapsed);
+    finalText = fullText;
+    if (fullText.includes('</thinking>')) {
+      finalText = fullText.split('</thinking>').slice(1).join('</thinking>');
+    }
+    aiDiv.innerHTML = parseSelfCheck(finalText);
     addMsgButtons(aiDiv, fullText);
 
     // v7.0.0: AI 消息时间戳
@@ -578,8 +603,9 @@ async function send(regen = false) {
 
     if (autoSpeak) speak(fullText);
     loadSessions();
+    } // 闭合 while
 
-    } catch (e) {
+    } catch (e) { // 闭合 try
     if (e.name === 'AbortError') {
       // 被新消息打断 → 悄悄删掉这个空气泡
       if (pendingText || pendingFile) {
@@ -3474,10 +3500,33 @@ async function doImagine(prompt) {
   };
 
   img.src = url;
-}
+  }
 
+  function parseSelfCheck(text) {
+  // 如果还在思考中（有 check 标签但没闭合）
+  if (text.includes('<check>') && !text.includes('</check>')) {
+    const content = text.split('<check>')[1];
+    return `<details class="thinking-block" open><summary>🔍 正在二次复核...</summary><div class="thinking-body">${escapeHtml(content)}</div></details>`;
+  }
+  // 思考完毕
+  if (text.includes('<check>') && text.includes('</check>')) {
+    const checkMatch = text.match(/<check>([\s\S]*?)<\/check>/);
+    const answerMatch = text.includes('<answer>') ? text.match(/<answer>([\s\S]*?)(<\/answer>|$)/) : null;
 
-// ==================== 挂载：addMsg / addMsgButtons 里调反应按钮 ====================
-// 找到 addMsg 里 attachFavBtn 那行，改成：
-//   attachFavBtn(div, _favIdx, text, cls);
-//   if (cls === 'ai') attachReactBtns(div, _favIdx);
+    let html = '';
+    if (checkMatch) {
+      // 渲染折叠块（默认收起）
+      html += `<details class="thinking-block"><summary>✅ 已进行二次复核</summary><div class="thinking-body">${escapeHtml(checkMatch[1].trim())}</div></details>`;
+    }
+    if (answerMatch) {
+      // 渲染最终答案
+      html += renderMarkdown(answerMatch[1]);
+    } else {
+      // 如果没有 answer 标签，就把剩下的全当答案
+      html += renderMarkdown(text.split('</check>')[1] || '');
+    }
+    return html;
+  }
+  // 正常渲染
+  return renderMarkdown(text);
+  }

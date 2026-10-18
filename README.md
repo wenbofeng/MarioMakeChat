@@ -28,6 +28,13 @@
 
 ## ✨ 功能特性
 
+
+### 🎮 少儿编程联动 (Scratch / TurboWarp)
+
+- **可视化编程**：内置 `momo-extension.js`，支持在 TurboWarp 中直接加载。
+- **积木化调用**：通过自定义积木 `Ask MoMo [PROMPT]`，让 Scratch 角色拥有本地 AI 大脑。
+- **跨域安全**：后端已内置 CORS 支持，方便对接各种本地前端。
+
 ### 🗣️ 对话核心
 
 | 功能 | 说明 |
@@ -949,6 +956,13 @@ pytesseract.pytesseract.tesseract_cmd = "/usr/local/bin/tesseract"
 ---
 
 ## ✨ 功能特性
+
+
+### 🎮 少儿编程联动 (Scratch / TurboWarp)
+
+- **可视化编程**：内置 `momo-extension.js`，支持在 TurboWarp 中直接加载。
+- **积木化调用**：通过自定义积木 `Ask MoMo [PROMPT]`，让 Scratch 角色拥有本地 AI 大脑。
+- **跨域安全**：后端已内置 CORS 支持，方便对接各种本地前端。
 
 ### 🗣️ 对话核心
 

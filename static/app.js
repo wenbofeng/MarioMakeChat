@@ -3530,3 +3530,42 @@ async function doImagine(prompt) {
   // 正常渲染
   return renderMarkdown(text);
   }
+
+  // 页面加载时检查
+async function checkModelStatus() {
+    const res = await fetch('/api/download_status');
+    const data = await res.json();
+
+    if (!data.finished && !data.is_downloading) {
+        // 没模型，弹窗问用户是否下载
+        if (confirm("检测到本地缺少模型文件，是否现在下载？（约 1GB）")) {
+            fetch('/api/start_download', { method: 'POST' });
+            monitorDownload();
+        }
+    } else if (data.is_downloading) {
+        monitorDownload();
+    }
+}
+
+function monitorDownload() {
+    const interval = setInterval(async () => {
+        const res = await fetch('/api/download_status');
+        const data = await res.json();
+
+        if (data.is_downloading) {
+            const percent = ((data.progress / data.total) * 100).toFixed(1);
+            // 这里可以替换成页面上好看的进度条 UI
+            console.log(`正在下载模型: ${percent}%`);
+        } else if (data.finished) {
+            clearInterval(interval);
+            alert("模型下载完成！请刷新页面开始对话。");
+            location.reload();
+        } else if (data.error) {
+            clearInterval(interval);
+            alert("下载失败: " + data.error);
+        }
+    }, 1000);
+}
+
+// 在页面初始化时调用
+document.addEventListener('DOMContentLoaded', checkModelStatus);

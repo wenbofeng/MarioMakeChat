@@ -1,0 +1,13 @@
+flask
+llama-cpp-python
+ddgs
+opencc-python-reimplemented
+pypdf
+python-docx
+python-pptx
+pillow
+pytesseract
+sentence-transformers==2.7.0
+transformers==4.36.2
+modelscope
+psutil

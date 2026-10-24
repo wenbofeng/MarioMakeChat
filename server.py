@@ -7,6 +7,7 @@ import warnings
 warnings.filterwarnings("ignore")
 
 import re
+import sys
 import json
 import time
 import requests
@@ -417,7 +418,79 @@ def auto_backup():
     except Exception as e:
         print(f"⚠️ 备份失败：{e}")
 
-BASE = os.path.join(os.path.dirname(__file__), "master")
+# 1. 优先找用户文档目录下的 MarioMakeChat/models
+user_model_dir = os.path.expanduser("~/Documents/MarioMakeChat/master")
+
+if os.path.exists(user_model_dir):
+    BASE = user_model_dir
+else:
+    # 2. 如果用户没建，按原来逻辑找
+    if getattr(sys, 'frozen', False):
+        exe_dir = os.path.dirname(sys.executable)
+        if ".app/Contents/MacOS" in exe_dir:
+            base_dir = os.path.dirname(os.path.dirname(os.path.dirname(exe_dir)))
+        else:
+            base_dir = exe_dir
+        BASE = os.path.join(base_dir, "master")
+    else:
+        BASE = os.path.join(os.path.dirname(__file__), "master")
+
+import os
+import sys
+import threading
+import time
+import requests  # 确保顶部有导入
+
+# 1. 定义模型存放路径（沿用你选定的 Documents 目录）
+USER_DIR = os.path.expanduser("~/Documents/MarioMakeChat")
+BASE = os.path.join(USER_DIR, "master")
+os.makedirs(BASE, exist_ok=True)  # 确保目录存在
+
+# 2. 设定默认下载的模型（以 1.5B 为例，文件小且快，你也可以换成 3B）
+DEFAULT_MODEL_NAME = "qwen2.5-1.5b-instruct-q4_k_m.gguf"
+DEFAULT_MODEL_URL = "https://modelscope.cn/models/Qwen/Qwen2.5-1.5B-Instruct-GGUF/resolve/master/qwen2.5-1.5b-instruct-q4_k_m.gguf"
+
+# 全局变量记录下载进度，供前端读取
+download_status = {
+    "is_downloading": False,
+    "progress": 0,
+    "total": 0,
+    "finished": False,
+    "error": ""
+}
+
+
+def download_model_background():
+    global download_status
+    file_path = os.path.join(BASE, DEFAULT_MODEL_NAME)
+
+    if os.path.exists(file_path):
+        download_status["finished"] = True
+        return
+
+    download_status["is_downloading"] = True
+    try:
+        # 使用 stream 模式下载，边下边存
+        response = requests.get(DEFAULT_MODEL_URL, stream=True, timeout=30)
+        response.raise_for_status()
+        total_size = int(response.headers.get('content-length', 0))
+        download_status["total"] = total_size
+
+        temp_path = file_path + ".tmp"
+        with open(temp_path, 'wb') as f:
+            downloaded = 0
+            for chunk in response.iter_content(chunk_size=1024 * 1024):  # 1MB chunk
+                if chunk:
+                    f.write(chunk)
+                    downloaded += len(chunk)
+                    download_status["progress"] = downloaded
+
+        os.rename(temp_path, file_path)
+        download_status["finished"] = True
+    except Exception as e:
+        download_status["error"] = str(e)
+    finally:
+        download_status["is_downloading"] = False
 
 AVAILABLE_MODELS = {
     "1.5B Q4_K_M": f"{BASE}/qwen2.5-1.5b-instruct-q4_k_m.gguf",
@@ -2209,6 +2282,39 @@ def apply_persona(name):
     settings["system_prompt"] = personas[name]
     save_settings()
     return jsonify({"ok": True, "persona": name})
+
+import subprocess
+
+@app.route('/api/run_code', methods=['POST'])
+def api_run_code():
+    data = request.json or {}
+    code = data.get('code', '')
+    lang = data.get('lang', 'python') # 默认跑 Python，也可以传 'shell'
+    
+    if not code:
+        return jsonify({'output': '没有收到代码', 'error': True})
+        
+    try:
+        if lang == 'python':
+            cmd = ['python3', '-c', code]
+        else:
+            cmd = code # 终端 shell 命令，比如 'ls -la'
+            
+        # 运行命令，捕获输出，设置 5 秒超时防止死循环
+        result = subprocess.run(
+            cmd, 
+            shell=(lang=='shell'), 
+            capture_output=True, 
+            text=True, 
+            timeout=5
+        )
+        
+        output = result.stdout if result.stdout else result.stderr
+        return jsonify({'output': output, 'error': False})
+    except subprocess.TimeoutExpired:
+        return jsonify({'output': '运行超时（超过 5 秒被强制终止）', 'error': True})
+    except Exception as e:
+        return jsonify({'output': str(e), 'error': True})
 
 if __name__ == "__main__":
     threading.Thread(target=wait_for_server, daemon=True).start()

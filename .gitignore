@@ -51,3 +51,12 @@ other/
 *.tmp
 test.py
 other/
+
+# PyInstaller
+build/
+dist/
+*.dmg
+*.spec
+__pycache__/
+*.pyc
+.DS_Store

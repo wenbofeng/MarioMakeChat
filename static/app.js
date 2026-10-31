@@ -436,8 +436,77 @@ async function extractTodoIfMatch(text) {
   }
 }
 
+// 在发送消息的函数最前面加上这段：
+function checkEasterEgg(message) {
+    // 判断暗号
+    if (message.trim() === "FMC SMO" || message.trim() === "8192") {
+        triggerEasterEgg();
+        return true; // 返回 true 表示拦截成功，不发给后端
+    }
+    return false; // 返回 false 表示正常发送
+}
+
+// 触发特效的函数
+function triggerEasterEgg() {
+    // 1. 清空输入框
+    document.querySelector('textarea').value = '';
+
+    // 2. 播放全屏掉落特效
+    const symbols = ['🍄', '🦋', '⭐', '🎉'];
+    for (let i = 0; i < 50; i++) {
+        setTimeout(() => {
+            const el = document.createElement('div');
+            el.innerText = symbols[Math.floor(Math.random() * symbols.length)];
+            el.style.position = 'fixed';
+            el.style.left = Math.random() * 100 + 'vw';
+            el.style.top = '-50px';
+            el.style.fontSize = (Math.random() * 20 + 20) + 'px';
+            el.style.zIndex = '9999';
+            el.style.transition = 'transform 3s linear, opacity 3s';
+
+            document.body.appendChild(el);
+
+            // 触发动画
+            setTimeout(() => {
+                el.style.transform = `translateY(110vh) rotate(${Math.random() * 360}deg)`;
+                el.style.opacity = '0';
+            }, 10);
+
+            // 动画结束后移除元素
+            setTimeout(() => el.remove(), 3000);
+        }, i * 50);
+    }
+
+    // 3. 弹出专属对话框（或者直接在聊天流里插入一条消息）
+    // 假设你的聊天容器 ID 叫 chat-box
+    const chatBox = document.getElementById('chat-box') || document.body;
+    const msgDiv = document.createElement('div');
+    msgDiv.style.padding = '20px';
+    msgDiv.style.margin = '10px';
+    msgDiv.style.background = 'linear-gradient(45deg, #ff9a9e, #fecfef)';
+    msgDiv.style.borderRadius = '15px';
+    msgDiv.style.color = '#333';
+    msgDiv.style.fontWeight = 'bold';
+    msgDiv.style.textAlign = 'center';
+    msgDiv.innerHTML = "🎉 <b>隐藏成就解锁！</b><br>你发现了墨墨的底层秘密！<br>此代码由 三年级全栈极客 FMC SMO 独家手搓！😎";
+
+    chatBox.appendChild(msgDiv);
+
+    // 自动滚动到最底部x
+    chatBox.scrollTop = chatBox.scrollHeight;
+}
+
 // ==================== 发送 ====================
 async function send(regen = false) {
+  // 1. 先获取真实的输入框元素和值（注意单引号里的选择器要和你 html 里的 id 对应）
+  const inputElement = document.getElementById('chat-input') || document.querySelector('textarea');
+  const realInputText = inputElement ? inputElement.value : "";
+
+  // 2. 检查彩蛋
+  if (checkEasterEgg(realInputText)) {
+      return; // 如果是彩蛋暗号，直接结束，不要去请求后端 API
+  }
+
   // v8.6.0: 只留最后一个请求——正在跑就排队
   if (isSending && !regen) {
     // 掐掉上一个（省算力）
@@ -3568,4 +3637,4 @@ function monitorDownload() {
 }
 
 // 在页面初始化时调用
-document.addEventListener('DOMContentLoaded', checkModelStatus);
+// document.addEventListener('DOMContentLoaded', checkModelStatus);

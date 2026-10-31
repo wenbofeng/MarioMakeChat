@@ -498,7 +498,7 @@ AVAILABLE_MODELS = {
     "3B Q4_K_M": f"{BASE}/qwen2.5-3b-instruct-q4_k_m.gguf",
     "Qwen3-1.7B 🧠思考": "ollama:qwen3:1.7b",
 }
-DEFAULT_MODEL = "Qwen3-1.7B 🧠思考"
+DEFAULT_MODEL = "3B Q4_K_M"
 # ================== 模型懒加载 ==================
 llm = None
 current_model_name = None
@@ -618,6 +618,22 @@ def login():
 def logout():
     session.pop("auth", None)
     return redirect("/login")
+
+@app.route('/api/download_status', methods=['GET'])
+def get_download_status():
+    # 直接告诉前端：模型已经存在啦，不用下载了！
+    return jsonify({
+        "is_downloading": False,
+        "progress": 100,
+        "total": 100,
+        "finished": True,
+        "error": ""
+    })
+
+@app.route('/api/start_download', methods=['POST'])
+def start_download():
+    # 这个接口前端如果调用，也直接返回成功
+    return jsonify({"status": "already_downloaded"})
 
 # ================== 会话管理 ==================
 def load_index(username=None):

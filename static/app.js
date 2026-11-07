@@ -3656,6 +3656,3 @@ function monitorDownload() {
         }
     }, 1000);
 }
-
-// 在页面初始化时调用
-// document.addEventListener('DOMContentLoaded', checkModelStatus);

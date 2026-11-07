@@ -1,0 +1,7 @@
+master/
+*.gguf
+build/
+dist/
+__pycache__/
+*.pyc
+.DS_Store

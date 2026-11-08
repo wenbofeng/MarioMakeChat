@@ -24,10 +24,49 @@ import subprocess
 import shutil
 import zipfile
 
-from flask import Flask, request, jsonify, render_template, Response, stream_with_context, session, redirect
+import os
+import sys
+
+# ==========================================
+# 🛡️ PyInstaller 跨平台打包环境适配补丁
+# ==========================================
+if getattr(sys, 'frozen', False):
+    # 1. 获取临时解压目录（放代码、网页、内部依赖）
+    bundle_dir = sys._MEIPASS
+    # 2. 获取真实运行目录（放模型、用户数据）
+    app_dir = os.path.dirname(sys.executable)
+    
+    # 3. 告诉系统动态库在哪里
+    lib_path = os.path.join(bundle_dir, 'llama_cpp', 'lib')
+    if os.path.exists(lib_path):
+        if sys.platform == 'darwin':  # 🍎 Mac 环境
+            os.environ['DYLD_LIBRARY_PATH'] = lib_path + ':' + os.environ.get('DYLD_LIBRARY_PATH', '')
+        elif sys.platform == 'win32': # 🪟 Windows 环境
+            os.environ['PATH'] = lib_path + ';' + os.environ.get('PATH', '')
+            # 强制向 Windows 系统注册 DLL 搜索路径
+            if hasattr(os, 'add_dll_directory'):
+                os.add_dll_directory(lib_path)
+
+    # 4. 改变工作目录到临时目录（确保 templates/static 能找到）
+    os.chdir(bundle_dir)
+    
+    # 👇 核心提醒：你后续代码里如果要用到模型，请用 app_dir 去拼接！
+    # 比如: MODEL_PATH = os.path.join(app_dir, "models", "qwen.gguf")
+
+from flask import Flask, request, jsonify, render_template, Response, stream_with_context, session, redirect 
 from llama_cpp import Llama
 
 import flask.cli
+
+# 3. 修改 Flask 初始化，让它去临时目录找 templates
+def resource_path(relative_path):
+    if getattr(sys, 'frozen', False):
+        return os.path.join(sys._MEIPASS, relative_path)
+    return os.path.join(os.path.abspath("."), relative_path)
+
+app = Flask(__name__, 
+            template_folder=resource_path('templates'),
+            static_folder=resource_path('static'))
 
 try:
     from ddgs import DDGS

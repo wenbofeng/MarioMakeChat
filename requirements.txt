@@ -11,3 +11,6 @@ sentence-transformers==2.7.0
 transformers==4.36.2
 modelscope
 psutil
+pystray
+Pillow  # pystray 的依赖
+rumps; sys_platform == 'darwin'

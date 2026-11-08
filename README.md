@@ -1,3 +1,4 @@
+
 # 🤖 MarioMakeChat (墨墨) - 纯本地 AI 助手
 
 [![macOS](https://img.shields.io/badge/macOS-10.15%2B-blue)](https://github.com/wenbofeng/MarioMakeChat)

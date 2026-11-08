@@ -17,23 +17,23 @@
 
 请前往 [Releases](https://github.com/wenbofeng/MarioMakeChat/releases) 页面，根据你的操作系统选择对应的安装包：
 
-### 🍎 macOS 用户 (macOS 10.15+)
-👉 **[点击这里下载 MarioMakeChat_V10.1.0_Pro.dmg](替换为你的实际Release链接)**
+本次发布包含 macOS 和 Windows 双平台独立运行包，无需配置任何 Python 环境，下载即用！
 
-1. 下载 `.dmg` 文件后双击打开。
-2. 将 **MarioMakeChat.app** 拖拽到 **Applications (应用程序)** 文件夹中。
-3. **⚠️ 首次启动提示“已损坏”？** 由于本项目为个人开源项目，未购买苹果开发者签名。请打开 Mac 终端，运行以下命令解除拦截：
-   `sudo xattr -cr /Applications/MarioMakeChat.app`
-4. 再次双击即可完美运行（应用会静默驻留在右上角菜单栏，出现“墨”字图标）。
+### 🍎 macOS 用户 (macOS 10.15+)
+👉 **下载文件：`墨墨AI_v10.1.0.dmg`**
+
+*   **安装步骤**：双击挂载 dmg，将“墨墨AI”拖入 Applications 文件夹。
+*   **⚠️ 解除拦截**：首次打开若提示“已损坏”，请在终端运行：`sudo xattr -cr /Applications/墨墨AI.app`
+*   **SHA256 校验码**：
+    `7b1877829a3fb61f3904ea107d92a3c599dcc9a72837b3344ae19e5f76be552d`
 
 ### 🪟 Windows 用户 (Windows 10/11)
-👉 **请在 Releases 页面下载 `MarioMakeChat-Windows_V10.1.0.zip` 压缩包**
+👉 **下载文件：`MarioMakeChat-Windows.zip`**
 
-1. 下载 `.zip` 后，解压到一个**纯英文路径**的文件夹中（例如 `D:\MarioMakeChat`）。
-2. 双击运行文件夹内的 `MarioMakeChat.exe`。
-3. **⚠️ 首次启动出现“Windows 已保护你的电脑”怎么办？**
-   因为未购买微软的代码签名证书，请点击提示框中的 **“更多信息”**，然后点击 **“仍要运行”** 即可。
-4. 程序会在后台静默启动，并自动打开浏览器访问 `127.0.0.1:5001`。
+*   **安装步骤**：解压后双击运行 `MarioMakeChat.exe`。程序将静默驻留在右下角系统托盘。
+*   **⚠️ 解除拦截**：若提示“Windows 已保护你的电脑”，点击“更多信息” -> “仍要运行”。
+*   **SHA256 校验码**：
+    `14d6540a5012a926feeb3aa1701cf88b3a504b8844f3197c01d430a031414ff5`
 
 ### 🐧 Linux / 源码开发者
 推荐直接克隆源码运行（请确保安装 Python 3.10+）。我们为你准备了**一键安装脚本**，请在终端依次执行以下命令：

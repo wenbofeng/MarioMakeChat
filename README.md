@@ -5,25 +5,29 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Release](https://img.shields.io/github/v/release/wenbofeng/MarioMakeChat)](https://github.com/wenbofeng/MarioMakeChat/releases)
 
-> ⚡ 完全离线、无需联网、保护隐私的 AI 助手。基于 Qwen2.5 与 Flask 打造，支持本地 RAG 知识库与 Scratch 联动！现已完美支持 macOS 与 Windows 双平台发布！
+> ⚡ 完全离线、无需联网、保护隐私的 AI 助手。基于 Qwen2.5 与 Flask 打造，支持本地 RAG 知识库、Ollama 热切换与 Scratch 极速联动！现已完美支持 macOS 与 Windows 双平台发布！
+
+## 🚀 V10.1.0 Pro 3FS 震撼发布
+本次更新带来了三个史诗级 Pro 功能：
+1. 🧠 **模型热切换**：支持在 1.5B / 3B 本地模型与 Ollama 引擎间无缝动态切换，按需分配内存，告别卡顿！
+2. ⚡ **Scratch 极速联动**：底层重构为 WebSocket 双向通信，内置防丢包队列，实现 TurboWarp 毫秒级实时交互！
+3. 📦 **一键安装脚本**：针对源码运行用户（Linux/Mac），提供全自动环境配置脚本，一键搞定所有依赖。
 
 ## 📥 下载与安装 (Download & Install)
 
 请前往 [Releases](https://github.com/wenbofeng/MarioMakeChat/releases) 页面，根据你的操作系统选择对应的安装包：
 
 ### 🍎 macOS 用户 (macOS 10.15+)
-👉 **[点击这里下载 MarioMakeChat_v9.0.2.dmg](https://github.com/wenbofeng/MarioMakeChat/releases)**
+👉 **[点击这里下载 MarioMakeChat_V10.1.0_Pro.dmg](替换为你的实际Release链接)**
 
 1. 下载 `.dmg` 文件后双击打开。
 2. 将 **MarioMakeChat.app** 拖拽到 **Applications (应用程序)** 文件夹中。
 3. **⚠️ 首次启动提示“已损坏”？** 由于本项目为个人开源项目，未购买苹果开发者签名。请打开 Mac 终端，运行以下命令解除拦截：
-   ```bash
-   sudo xattr -cr /Applications/MarioMakeChat.app
-   ```
+   `sudo xattr -cr /Applications/MarioMakeChat.app`
 4. 再次双击即可完美运行（应用会静默驻留在右上角菜单栏，出现“墨”字图标）。
 
 ### 🪟 Windows 用户 (Windows 10/11)
-👉 **请在 Releases 页面下载 `MarioMakeChat-Windows.zip` 压缩包**
+👉 **请在 Releases 页面下载 `MarioMakeChat-Windows_V10.1.0.zip` 压缩包**
 
 1. 下载 `.zip` 后，解压到一个**纯英文路径**的文件夹中（例如 `D:\MarioMakeChat`）。
 2. 双击运行文件夹内的 `MarioMakeChat.exe`。
@@ -31,21 +35,20 @@
    因为未购买微软的代码签名证书，请点击提示框中的 **“更多信息”**，然后点击 **“仍要运行”** 即可。
 4. 程序会在后台静默启动，并自动打开浏览器访问 `127.0.0.1:5001`。
 
-### 🐧 Linux 用户
-由于 Linux 发行版众多，推荐直接克隆源码运行（请确保安装 Python 3.10）：
-```bash
-git clone https://github.com/wenbofeng/MarioMakeChat.git
-cd MarioMakeChat
-python3 -m venv venv && source venv/bin/activate
-pip install -r requirements.txt
-python server.py
-```
+### 🐧 Linux / 源码开发者
+推荐直接克隆源码运行（请确保安装 Python 3.10+）。我们为你准备了**一键安装脚本**，请在终端依次执行以下命令：
+`git clone https://github.com/wenbofeng/MarioMakeChat.git`
+`cd MarioMakeChat`
+`chmod +x install.sh`
+`./install.sh`
+*(安装完成后，运行 `python server.py` 启动)*
 
 ## ✨ 核心特性 (Features)
-- 🧠 **完全离线**：基于 llama-cpp-python，断网状态下依然能陪你聊天。
+- 🧠 **完全离线**：基于 llama-cpp-python 与 Ollama，断网状态下依然能陪你聊天。
+- 🔄 **多模型热切换**：支持极速切换 1.5B/3B 模型或切换至 Ollama 思考模型，低配电脑也能完美运行。
 - 📚 **本地知识库 (RAG)**：支持上传 PDF/TXT/MD，让 AI 基于你的私有文档回答。
-- 🎮 **Scratch 联动**：支持 TurboWarp，内置 `momo-extension.js`，让你的游戏角色拥有 AI 大脑。
-- 🎨 **极客定制**：支持情绪感知、自定义人设、代码高亮、多用户隔离与快捷指令。
+- 🎮 **Scratch 联动**：支持 TurboWarp，内置 `momo-extension.js`，通过 WebSocket 让你的游戏角色拥有极低延迟的 AI 大脑。
+- 🎨 **极客定制**：支持情绪感知、自定义人设、代码高亮、多用户隔离、划词助手与快捷指令。
 - ☁️ **云端自动打包**：利用 GitHub Actions 实现 Windows/Mac 跨平台自动构建。
 
 ## 🚀 极客整活 (Geek Out)

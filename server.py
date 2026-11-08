@@ -58,6 +58,8 @@ from functools import lru_cache
 
 from pynput import keyboard
 from pynput.keyboard import Controller, Key
+from flask_sock import Sock
+
 
 _ocr_engine = None
 
@@ -441,8 +443,7 @@ else:
 import os
 import sys
 import threading
-import time
-import requests  # 确保顶部有导入
+import time # 确保顶部有导入
 
 # 1. 定义模型存放路径（沿用你选定的 Documents 目录）
 USER_DIR = os.path.expanduser("~/Documents/MarioMakeChat")
@@ -502,6 +503,100 @@ AVAILABLE_MODELS = {
     "Qwen3-1.7B 🧠思考": "ollama:qwen3:1.7b",
 }
 DEFAULT_MODEL = "3B Q4_K_M"
+
+class ModelManager:
+    def __init__(self):
+        self.llm = None
+        self.current_engine = "llama_cpp"
+        self.current_model_name = ""
+
+    def load_local_gguf(self, model_name, model_path):
+        # 👇 强行防御：如果路径带 ollama: 前缀，自动转交处理
+        if model_path and model_path.startswith("ollama:"):
+            actual_ollama_name = model_path.replace("ollama:", "")
+            self.set_ollama_engine(actual_ollama_name)
+            return
+
+        # 如果已经是当前模型，直接跳过，防止重复加载卡死
+        if self.current_engine == "llama_cpp" and self.current_model_name == model_name:
+            return
+            
+        if self.llm is not None:
+            del self.llm
+            gc.collect()
+        
+        self.llm = Llama(
+            model_path=model_path,
+            n_ctx=1024,
+            n_threads=2,
+            n_batch=64,
+            use_mlock=False  
+        )
+        self.current_engine = "llama_cpp"
+        self.current_model_name = model_name
+
+    def set_ollama_engine(self, model_name):
+        if self.current_engine == "ollama" and self.current_model_name == model_name:
+            return
+            
+        if self.llm is not None:
+            del self.llm
+            gc.collect()
+        self.llm = None
+        self.current_engine = "ollama"
+        self.current_model_name = model_name
+
+    # 统一的非流式生成接口
+    def generate(self, prompt, **kwargs):
+        if self.current_engine == "llama_cpp" and self.llm:
+            output = self.llm(prompt, **kwargs)
+            return output["choices"][0]["text"].strip()
+            
+        elif self.current_engine == "ollama":
+            try:
+                res = requests.post("http://localhost:11434/api/generate", json={
+                    "model": self.current_model_name.split(":")[-1] if ":" in self.current_model_name else self.current_model_name,
+                    "prompt": prompt,
+                    "stream": False,
+                    "options": {
+                        "temperature": kwargs.get("temperature", 0.7),
+                        "num_predict": kwargs.get("max_tokens", 512)
+                    }
+                }, timeout=60)
+                return res.json().get("response", "").strip()
+            except Exception as e:
+                return f"连不上 Ollama，请确认是否运行！({e})"
+        return "没有加载任何模型哦~"
+
+    # 统一的流式生成接口 (专为你的 SSE 准备)
+    def generate_stream(self, prompt, **kwargs):
+        if self.current_engine == "llama_cpp" and self.llm:
+            kwargs["stream"] = True
+            stream_iter = self.llm(prompt, **kwargs)
+            for chunk in stream_iter:
+                yield chunk["choices"][0]["text"]
+                
+        elif self.current_engine == "ollama":
+            try:
+                res = requests.post("http://localhost:11434/api/generate", json={
+                    "model": self.current_model_name.split(":")[-1] if ":" in self.current_model_name else self.current_model_name,
+                    "prompt": prompt,
+                    "stream": True,
+                    "options": {
+                        "temperature": kwargs.get("temperature", 0.7),
+                        "num_predict": kwargs.get("max_tokens", 512)
+                    }
+                }, stream=True, timeout=60)
+                for line in res.iter_lines():
+                    if line:
+                        data = json.loads(line)
+                        if "response" in data:
+                            yield data["response"]
+            except Exception as e:
+                yield f"Ollama 流式输出报错: {e}"
+
+model_manager = ModelManager()
+
 # ================== 模型懒加载 ==================
 llm = None
 current_model_name = None
@@ -561,6 +656,7 @@ rag.load_docs()
 app = Flask(__name__)
 app.secret_key = "mmai-local-secret-key-v5"
 app.permanent_session_lifetime = datetime.timedelta(days=7)
+sock = Sock(app)
 
 # ================= v10.0.0 Pro: 全局划词助手 =================
 
@@ -2203,6 +2299,7 @@ def openai_chat():
     if not messages:
         return jsonify({"error": {"message": "messages is required"}}), 400
 
+    # 1. 拼接提示词（保留你强大的防幻觉逻辑）
     user_text = ""
     for m in messages:
         role = m.get("role", "")
@@ -2225,34 +2322,44 @@ def openai_chat():
         temp_history = None
         user_text = user_text.strip()
     
-    # 👇 新增：强制注入防乱码/防幻觉规则
     anti_hallucination_prompt = (
         "[最高系统指令] 你是一个严谨的AI助手。绝对禁止输出“断网状态你都”等乱码，"
         "禁止输出连续重复的无意义字符（如@@@@）。必须使用正常的中文回答。\n"
     )
     user_text = anti_hallucination_prompt + user_text
+    
     if model_name not in AVAILABLE_MODELS:
         model_name = DEFAULT_MODEL
 
+    # 2. 核心修改：调用 model_manager 进行热切换
     try:
-        load_model(model_name)
+        target_path = AVAILABLE_MODELS[model_name]
+        if target_path.startswith("ollama:"):
+            model_manager.set_ollama_engine(model_name)
+        else:
+            model_manager.load_local_gguf(model_name, target_path)
     except Exception as e:
         return jsonify({"error": {"message": f"模型加载失败：{e}"}}), 500
 
+    # 3. 构建 prompt
+    prompt = clean_surrogates(build_prompt(user_text, None, history_override=temp_history))
+
+    # 4. 非流式输出
     if not stream:
-        prompt = clean_surrogates(build_prompt(user_text, None, history_override=temp_history))
         try:
-            LLM_LOCK.acquire()
-            try:
-                output = llm(prompt, max_tokens=max_tokens, temperature=temperature,
-                             top_p=TOP_P, repeat_penalty=1.3, stop=["<|im_end|>"], echo=False)
-            finally:
-                LLM_LOCK.release()
-            reply = output["choices"][0]["text"].strip()
+            reply = model_manager.generate(
+                prompt, 
+                max_tokens=max_tokens, 
+                temperature=temperature,
+                top_p=TOP_P, 
+                repeat_penalty=1.3, 
+                stop=["<|im_end|>"], 
+                echo=False
+            )
+            
             if OPENCC_AVAILABLE:
                 reply = cc.convert(reply)
                 
-            # 👇 新增：拦截乱码和幻觉
             bad_words = ["断网状态", "@@@@", "aaaa"]
             if any(word in reply for word in bad_words) or len(reply) == 0:
                 reply = "抱歉，我刚刚走神了，请重新问我一次。"
@@ -2268,27 +2375,30 @@ def openai_chat():
             "usage": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
         })
 
+    # 5. 流式输出 (SSE)
     def generate():
-        prompt = clean_surrogates(build_prompt(user_text, None, history_override=temp_history))
-        LLM_LOCK.acquire()
         try:
-            stream_iter = llm(prompt, max_tokens=max_tokens, temperature=temperature,
-                              top_p=TOP_P, repeat_penalty=1.3,
-                              stop=["<|im_end|>"], echo=False, stream=True)
-            for chunk in stream_iter:
-                token = chunk["choices"][0]["text"]
+            stream_iter = model_manager.generate_stream(
+                prompt, 
+                max_tokens=max_tokens, 
+                temperature=temperature,
+                top_p=TOP_P, 
+                repeat_penalty=1.3,
+                stop=["<|im_end|>"], 
+                echo=False
+            )
+            for token in stream_iter:
                 if not token:
                     continue
                 if OPENCC_AVAILABLE:
                     token = cc.convert(token)
                     
-                # 👇 新增：流式输出时，如果检测到打头的乱码直接拦截
                 if "断网状态" in token or "@@@" in token:
                     token = " （系统提示：检测到AI幻觉，已打断输出） "
                     
-                yield token  # 你原有逻辑，保持
-        finally:
-            LLM_LOCK.release()
+                yield token
+        except Exception as e:
+            yield f" (流式生成出错: {e}) "
 
     return Response(
         stream_with_context(generate()),
@@ -2419,6 +2529,32 @@ def api_run_code():
         return jsonify({'output': '运行超时（超过 5 秒被强制终止）', 'error': True})
     except Exception as e:
         return jsonify({'output': str(e), 'error': True})
+
+@sock.route('/ws_scratch')
+def scratch_websocket(ws):
+    print("🟢 Scratch 客户端已连接到 WebSocket")
+    try:
+        while True:
+            message = ws.receive()
+            if message:
+                print(f"📩 收到 Scratch 消息: {message}")
+                
+                # 👇 必须加上这段！
+                current_key = settings.get("current_model", DEFAULT_MODEL)
+                target = AVAILABLE_MODELS.get(current_key)
+                if target and target.startswith("ollama:"):
+                    model_manager.set_ollama_engine(target.replace("ollama:", ""))
+                elif target:
+                    model_manager.load_local_gguf(current_key, target)
+                
+                prompt = f"[系统指令] 你是一个游戏AI助手。请简短回答，不要超过20个字。\n用户：{message}\n助手："
+                reply = model_manager.generate(prompt, max_tokens=100, temperature=0.7)
+                reply = reply.replace('\n', ' ')
+                
+                print(f"📤 发送给 Scratch: {reply}")
+                ws.send(reply)
+    except Exception as e:
+        print(f"🔴 Scratch WebSocket 断开或出错: {e}")
 
 if __name__ == "__main__":
     threading.Thread(target=wait_for_server, daemon=True).start()

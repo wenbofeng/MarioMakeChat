@@ -31,6 +31,19 @@ const DEFAULT_TEMPLATES = [
   { icon: '❓', label: '列要点', prompt: '请把以下内容整理成要点：\n' },
 ];
 
+function formatMessage(text) {
+    // 把思考过程变成灰色的折叠区域
+    text = text.replace(/<thinking>([\s\S]*?)<\/thinking>/g, 
+        '<details style="color: #888; font-size: 0.9em; margin-bottom: 10px;">' +
+        '<summary style="cursor: pointer;">🧠 思考过程（点击展开）</summary>' +
+        '<div style="padding-left: 10px; border-left: 2px solid #555;">$1</div>' +
+        '</details>');
+    
+    // 提取最终答案
+    text = text.replace(/<answer>([\s\S]*?)<\/answer>/g, '$1');
+    return text;
+}
+
 async function toggleQuickAssist(isEnabled) {
     try {
         const res = await fetch('/api/toggle_quick_assist', {

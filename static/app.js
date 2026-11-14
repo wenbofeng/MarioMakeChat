@@ -603,7 +603,7 @@ async function send(regen = false) {
   const aiStartTs = Date.now() / 1000;
 
   try {
-    const formData = new FormData();
+        const formData = new FormData();
     formData.append('message', text);
     formData.append('model', modelSelect.value);
     formData.append('web', document.getElementById('web').checked);
@@ -613,6 +613,12 @@ async function send(regen = false) {
       formData.append('temp_id', tempId);
     }
     formData.append('think_mode', thinkMode);
+
+    // 👇 新增：获取思考深度下拉框的值，并塞进 FormData
+    const effortSelect = document.getElementById('reasoning-effort');
+    if (effortSelect) {
+        formData.append('reasoning_effort', effortSelect.value);
+    }
 
     const res = await fetch('/chat', {
       method: 'POST', body: formData,

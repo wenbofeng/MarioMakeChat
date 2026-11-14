@@ -2,10 +2,13 @@ import os
 os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
 os.environ["OMP_NUM_THREADS"] = "1"
 os.environ["MKL_NUM_THREADS"] = "1"
+os.environ["HF_ENDPOINT"] = "https://hf-mirror.com"
+os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
 import warnings
 warnings.filterwarnings("ignore")
 
+import base64
 import re
 import sys
 import json
@@ -550,7 +553,7 @@ class ModelManager:
         self.current_model_name = ""
 
     def load_local_gguf(self, model_name, model_path):
-        # 👇 强行防御：如果路径带 ollama: 前缀，自动转交处理
+        # 防御：如果路径带 ollama: 前缀，自动转交处理
         if model_path and model_path.startswith("ollama:"):
             actual_ollama_name = model_path.replace("ollama:", "")
             self.set_ollama_engine(actual_ollama_name)
@@ -587,6 +590,9 @@ class ModelManager:
 
     # 统一的非流式生成接口
     def generate(self, prompt, **kwargs):
+        # 👇 剥离 reasoning_effort，防止底层库不认识报错
+        kwargs.pop("reasoning_effort", None)
+        
         if self.current_engine == "llama_cpp" and self.llm:
             output = self.llm(prompt, **kwargs)
             return output["choices"][0]["text"].strip()
@@ -594,7 +600,7 @@ class ModelManager:
         elif self.current_engine == "ollama":
             try:
                 res = requests.post("http://localhost:11434/api/generate", json={
-                    "model": self.current_model_name.split(":")[-1] if ":" in self.current_model_name else self.current_model_name,
+                    "model": self.current_model_name, # 👈 修复：直接用全名 qwen3:1.7b
                     "prompt": prompt,
                     "stream": False,
                     "options": {
@@ -607,8 +613,11 @@ class ModelManager:
                 return f"连不上 Ollama，请确认是否运行！({e})"
         return "没有加载任何模型哦~"
 
-    # 统一的流式生成接口 (专为你的 SSE 准备)
+    # 统一的流式生成接口
     def generate_stream(self, prompt, **kwargs):
+        # 👇 剥离 reasoning_effort，防止底层库不认识报错
+        kwargs.pop("reasoning_effort", None)
+
         if self.current_engine == "llama_cpp" and self.llm:
             kwargs["stream"] = True
             stream_iter = self.llm(prompt, **kwargs)
@@ -618,7 +627,7 @@ class ModelManager:
         elif self.current_engine == "ollama":
             try:
                 res = requests.post("http://localhost:11434/api/generate", json={
-                    "model": self.current_model_name.split(":")[-1] if ":" in self.current_model_name else self.current_model_name,
+                    "model": self.current_model_name, # 👈 修复：直接用全名
                     "prompt": prompt,
                     "stream": True,
                     "options": {
@@ -626,14 +635,17 @@ class ModelManager:
                         "num_predict": kwargs.get("max_tokens", 512)
                     }
                 }, stream=True, timeout=60)
+                
                 for line in res.iter_lines():
                     if line:
                         data = json.loads(line)
                         if "response" in data:
                             yield data["response"]
             except Exception as e:
-                yield f"Ollama 流式输出报错: {e}"
-
+                import traceback
+                traceback.print_exc() # 终端会打印红字报错
+                yield f"\n⚠️ Ollama 流式请求异常: {e}"
+                
 model_manager = ModelManager()
 
 # ================== 模型懒加载 ==================
@@ -1250,9 +1262,69 @@ def trim_history(history):
             history.pop(0)
     return history
 
+def generate_vision_ollama(text, image_base64, vision_model_name):
+    try:
+        res = requests.post("http://localhost:11434/api/chat", json={
+            "model": vision_model_name,
+            "messages": [
+                {
+                    "role": "user",
+                    "content": text or "请详细描述这张图片的内容。",
+                    "images": [image_base64]
+                }
+            ],
+            "stream": True,
+            "options": {
+                "temperature": 0.7
+            }
+        }, stream=True, timeout=120)
+        
+        for line in res.iter_lines():
+            if line:
+                data = json.loads(line)
+                if "message" in data and "content" in data["message"]:
+                    yield data["message"]["content"]
+    except Exception as e:
+        yield f"\n⚠️ 视觉模型请求异常: {e}"
+
+import math
+
+def execute_local_tools(text):
+    """本地工具执行器：拦截特定指令，直接执行代码"""
+    text = text.strip()
+    
+    # 🛠️ 工具1：时间查询
+    if re.search(r'(现在几点|当前时间|今天几号|星期几)', text):
+        now = datetime.datetime.now()
+        weekdays = ["一", "二", "三", "四", "五", "六", "日"]
+        return f"[系统工具执行结果] 当前时间是：{now.strftime('%Y年%m月%d日 %H:%M:%S')}，星期{weekdays[now.weekday()]}。"
+        
+    # 🛠️ 工具2：高级数学计算（比如输入：计算 2**10 + math.sqrt(16)）
+    calc_match = re.search(r'(计算|算一下)[\s:：]*(.+)', text)
+    if calc_match:
+        expr = calc_match.group(2)
+        # 安全过滤，防止恶意代码执行
+        if re.match(r'^[\d\+\-\*\/\(\)\.\s\,a-zA-Z_]+$', expr):
+            try:
+                # 允许使用 math 库
+                result = eval(expr, {"__builtins__": None}, {"math": math})
+                return f"[系统工具执行结果] 计算表达式 `{expr}` 的结果是：{result}"
+            except Exception as e:
+                return f"[系统工具报错] 无法计算该表达式：{e}"
+                
+    return None  # 如果没匹配到工具，返回 None 正常聊天
+
 # ================== 流式生成 ==================
-def generate_stream(text, model_name, force_web=False, has_file=False, is_temp=False, temp_id="", think_mode="auto"):
+def generate_stream(text, model_name, force_web, has_file, is_temp, temp_id, think_mode, reasoning_effort="high",image_base64=None):
     global current_session_id
+
+    # 👇 👇 👇 插入开始 👇 👇 👇
+    # 根据思考深度动态修改 Prompt
+    if reasoning_effort == "max":
+        text = f"[系统强制指令：请进行极深度的思考，分析所有可能的细节和边界条件，给出极其详尽的推导过程，不要急于下结论。]\n\n用户原问题：{text}"
+    elif reasoning_effort == "low":
+        text = f"[系统强制指令：请直接给出最终结论，不需要解释，不需要推导，字数越少越好。]\n用户原问题：{text}"
+    # 👆 👆 👆 插入结束 👆 👆 👆
 
     # v6.1.1: 推送情绪状态给前端
     emo = detect_emotion(text)
@@ -1263,15 +1335,13 @@ def generate_stream(text, model_name, force_web=False, has_file=False, is_temp=F
     _model_path = AVAILABLE_MODELS.get(model_name, "")
     if _model_path.startswith("ollama:"):
         ollama_model = _model_path[7:]
-        yield from generate_stream_ollama(text, ollama_model, is_temp, temp_id, think_mode)
-        return
 
-    try:
-        load_model(model_name)
-    except Exception as e:
-        import traceback
-        traceback.print_exc()
-        yield f"\n⚠️ 生成出错：{e}"
+        # 👇 核心：如果带有图片，强制走视觉分支，模型名指定为 llava-phi3
+        if image_base64:
+            yield from generate_vision_ollama(text, image_base64, "llava-phi3") 
+            return
+
+        yield from generate_stream_ollama(text, ollama_model, is_temp, temp_id, think_mode)
         return
 
     if is_temp:
@@ -1455,8 +1525,7 @@ def generate_stream(text, model_name, force_web=False, has_file=False, is_temp=F
     else:
         set_history(history)
 
-def generate_stream_ollama(text, ollama_model, is_temp=False, temp_id="", think_mode="auto"):
-    ...
+def generate_stream_ollama(text, ollama_model, is_temp, temp_id, think_mode):
     SIMPLE_PATTERNS = ['你好', '您好', 'hi', 'hello', 'hey', '在吗', '在么',
                        '谢谢', '感谢', '再见', '拜拜', '晚安', '早安',
                        '几点', '日期', '星期', '记一下', '待办']
@@ -2248,6 +2317,7 @@ def forget_name():
 def chat():
     file_text = ""
     has_file = False
+    image_base64 = None  # 👈 核心修复：直接在最开头初始化！防止未定义报错
     guard = guard_spectator()
     if guard: return guard
 
@@ -2259,9 +2329,17 @@ def chat():
         temp_id = request.form.get('temp_id', '').strip()
         think_mode = request.form.get('think_mode', 'auto')
         file = request.files.get('file')
+        # 👇 新增：接收思考深度
+        reasoning_effort = request.form.get('reasoning_effort', 'high') 
+        
         if file and file.filename:
-            file_text = extract_text_from_file(file)[:MAX_FILE_TEXT]
-            has_file = True
+            if file.content_type.startswith('image/'):
+                import base64
+                image_base64 = base64.b64encode(file.read()).decode('utf-8') # 这里会被重新赋值覆盖
+                has_file = True
+            else:
+                file_text = extract_text_from_file(file)[:MAX_FILE_TEXT]
+                has_file = True
     else:
         data = request.json
         text = data.get('message', '').strip()
@@ -2270,6 +2348,10 @@ def chat():
         is_temp = data.get('temp') == 'true'
         temp_id = data.get('temp_id', '').strip()
         think_mode = data.get('think_mode', 'auto')
+        # 👇 新增：接收思考深度
+        reasoning_effort = data.get('reasoning_effort', 'high')
+
+        image_base64 = None # 如果是 JSON 请求，也把它置空，防止报错
 
     if file_text:
         # v6.3.2: 纯抄写需求直接返回 OCR 结果，绕过 LLM，避免幻觉
@@ -2304,10 +2386,18 @@ def chat():
     if not text:
         return Response("请输入内容。", mimetype="text/plain; charset=utf-8")
 
+    tool_result = execute_local_tools(text)
+    if tool_result:
+        # 如果工具被触发，我们直接把结果返回给前端，甚至不需要大模型出马！
+        # 但是为了体验更好，我们让模型根据工具结果说句话。
+        text = f"用户问你：{text}\n{tool_result}\n请直接根据工具的执行结果，用简短自然的话语回复用户，不要编造。"
+
+    # 👇 接着调用 generate_stream
     return Response(
-        stream_with_context(generate_stream(text, model_name, force_web, has_file, is_temp, temp_id, think_mode)),
+        stream_with_context(generate_stream(text, model_name, force_web, has_file, is_temp, temp_id, think_mode, reasoning_effort, image_base64)),
         mimetype="text/plain; charset=utf-8"
     )
+
 @app.route("/reset", methods=["POST"])
 def reset():
     global current_session_id
@@ -2334,6 +2424,7 @@ def openai_chat():
     stream = data.get("stream", False)
     temperature = data.get("temperature", TEMPERATURE)
     max_tokens = data.get("max_tokens", MAX_TOKENS)
+    reasoning_effort = data.get("reasoning_effort", "high") 
 
     if not messages:
         return jsonify({"error": {"message": "messages is required"}}), 400
@@ -2393,7 +2484,8 @@ def openai_chat():
                 top_p=TOP_P, 
                 repeat_penalty=1.3, 
                 stop=["<|im_end|>"], 
-                echo=False
+                echo=False,
+                reasoning_effort=reasoning_effort
             )
             
             if OPENCC_AVAILABLE:

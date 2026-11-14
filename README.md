@@ -59,4 +59,4 @@
 本项目采用 [MIT License](LICENSE) 协议开源。你可以自由地使用、修改和分发。
 
 ---
-*Made with ❤️ by FMC SMO (A 3rd-grade developer)*
+*Made with ❤️ by FMC SMO (A 3rd-grade developer)*ß

@@ -1,3 +1,8 @@
+MarioMakeChat (MoMo) - A completely offline, local AI assistant built for Scratch/TurboWarp.
+Features: Local Qwen2.5, Vision AI, Agent Tool-calling, and WebSocket real-time Scratch integration.
+Check the README for download links!
+
+
 # 🤖 MarioMakeChat (墨墨) - 纯本地 AI 助手
 
 [![macOS](https://img.shields.io/badge/macOS-10.15%2B-blue)](https://github.com/wenbofeng/MarioMakeChat)

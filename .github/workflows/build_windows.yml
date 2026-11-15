@@ -4,7 +4,7 @@ on:
   workflow_dispatch: # 允许你在 GitHub 网页上手动点击触发
   push:
     tags:
-      - 'v*' # 当你 push 以 v 开头的 tag 时，自动触发
+      - 'v*' # 当你 push 以 v 开头的 tag 时，自动触发（比如 v10.2.0-pro-3fs）
 
 jobs:
   build-windows:
@@ -25,12 +25,12 @@ jobs:
         # Windows 上装 PyTorch 必须指定 CPU 版本，否则会去下 2GB 的显卡驱动包
         pip install torch==2.2.2 torchvision==0.17.2 torchaudio==2.2.2 --index-url https://download.pytorch.org/whl/cpu
         pip install -r requirements.txt
-
-    - name: 使用 PyInstaller 打包
-      run: |
         pip install pyinstaller
-        # 注意：Windows 的路径分隔符是 ; 而不是 Mac 的 :
-        pyinstaller --noconfirm --windowed --name "MarioMakeChat" --add-data "templates;templates" --add-data "static;static" --add-data "momo-extension.js;." launcher.py
+
+    - name: 使用 PyInstaller 打包 (Spec 模式)
+      run: |
+        # 直接使用你的 spec 文件，这样 Windows 和 Mac 的打包逻辑就统一了！
+        pyinstaller --clean --noconfirm MarioMakeChat.spec
 
     - name: 将生成的 EXE 上传为临时文件
       uses: actions/upload-artifact@v4

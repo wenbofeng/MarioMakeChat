@@ -5,3 +5,15 @@ dist/
 __pycache__/
 *.pyc
 .DS_Store
+# 打包出来的应用和临时文件夹
+dmg_build/
+dist/
+build/
+*.app/
+*.dmg
+
+# 备份文件夹
+backups/
+
+# 用户数据
+users/

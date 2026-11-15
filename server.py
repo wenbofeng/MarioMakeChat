@@ -837,17 +837,6 @@ def logout():
     session.pop("auth", None)
     return redirect("/login")
 
-@app.route('/api/download_status', methods=['GET'])
-def get_download_status():
-    # 直接告诉前端：模型已经存在啦，不用下载了！
-    return jsonify({
-        "is_downloading": False,
-        "progress": 100,
-        "total": 100,
-        "finished": True,
-        "error": ""
-    })
-
 @app.route('/api/start_download', methods=['POST'])
 def start_download():
     # 这个接口前端如果调用，也直接返回成功
@@ -1765,6 +1754,121 @@ def rename_user():
 @app.route("/")
 def index():
     return render_template("index.html")
+
+import threading
+
+# 全局下载状态
+download_state = {
+    "is_downloading": False,
+    "progress": 0,
+    "total": 0,
+    "finished": False,
+    "error": None
+}
+
+def background_download_task(url, save_path):
+    global download_state
+    try:
+        import requests
+        download_state["is_downloading"] = True
+        download_state["finished"] = False
+        download_state["error"] = None
+        
+        response = requests.get(url, stream=True)
+        download_state["total"] = int(response.headers.get('content-length', 0))
+        
+        with open(save_path, 'wb') as f:
+            for chunk in response.iter_content(chunk_size=1024*1024):
+                if chunk:
+                    f.write(chunk)
+                    download_state["progress"] += len(chunk)
+                    
+        download_state["finished"] = True
+        
+        # 下载完成后，直接热加载模型
+        try:
+            model_manager.load_local_gguf("1.5B Q4_K_M", save_path)
+            print("✅ 后台下载完毕，模型已自动热加载！")
+        except Exception as e:
+            print(f"下载成功但加载失败: {e}")
+            
+    except Exception as e:
+        download_state["error"] = str(e)
+    finally:
+        download_state["is_downloading"] = False
+
+# ================= 路由 =================
+
+@app.route("/api/download_model", methods=["POST"])
+def start_download_model():
+    global download_state
+    if download_state["is_downloading"]:
+        return jsonify({"error": "正在下载中，请勿重复点击"}), 400
+        
+    model_dir = os.path.join(os.getcwd(), "models")
+    os.makedirs(model_dir, exist_ok=True)
+    save_path = os.path.join(model_dir, "qwen2.5-1.5b-instruct-q4_k_m.gguf")
+    
+    url = "https://modelscope.cn/api/v1/models/Qwen/Qwen2.5-1.5B-Instruct-GGUF/repo?Revision=master&FilePath=qwen2.5-1.5b-instruct-q4_k_m.gguf"
+    
+    download_state = {"is_downloading": True, "progress": 0, "total": 0, "finished": False, "error": None}
+    
+    # 开启后台线程去下载，不阻塞 Flask 主线程
+    threading.Thread(target=background_download_task, args=(url, save_path), daemon=True).start()
+    
+    return jsonify({"ok": True, "message": "后台下载任务已启动"})
+
+@app.route("/api/download_status", methods=["GET"])
+def get_download_status():
+    return jsonify(download_state)
+
+import requests
+import os
+
+@app.route("/api/download_model", methods=["GET"])
+def download_model():
+    """流式下载模型并实时返回进度"""
+    model_dir = os.path.join(os.getcwd(), "models")
+    os.makedirs(model_dir, exist_ok=True)
+    
+    model_path = os.path.join(model_dir, "qwen2.5-1.5b-instruct-q4_k_m.gguf")
+    if os.path.exists(model_path):
+        return "✅ 模型已存在，无需下载！", 200
+
+    # 国内推荐使用魔搭（ModelScope）的直链，速度比 HuggingFace 快得多
+    # 这是 Qwen2.5-1.5B-Instruct 的 Q4_K_M 版本
+    model_url = "https://modelscope.cn/api/v1/models/Qwen/Qwen2.5-1.5B-Instruct-GGUF/repo?Revision=master&FilePath=qwen2.5-1.5b-instruct-q4_k_m.gguf"
+
+    def generate_progress():
+        try:
+            # 使用流式请求下载
+            response = requests.get(model_url, stream=True, timeout=30)
+            total_size = int(response.headers.get('content-length', 0))
+            downloaded_size = 0
+            
+            yield "开始下载...\n"
+            
+            with open(model_path, 'wb') as f:
+                # 每次下载 1MB 的块
+                for chunk in response.iter_content(chunk_size=1024 * 1024):
+                    if chunk:
+                        f.write(chunk)
+                        downloaded_size += len(chunk)
+                        # 计算百分比
+                        if total_size > 0:
+                            percent = (downloaded_size / total_size) * 100
+                            # 实时向前端发送进度
+                            yield f"下载进度: {percent:.1f}% ({downloaded_size / (1024*1024):.1f}MB / {total_size / (1024*1024):.1f}MB)\n"
+            
+            yield "\n✅ 模型下载并解压完成！请重启软件或刷新页面。"
+        except Exception as e:
+            # 如果下载失败，把残缺文件删掉
+            if os.path.exists(model_path):
+                os.remove(model_path)
+            yield f"\n❌ 下载失败: {str(e)}\n"
+
+    # 返回流式响应，mimetype 设为 text/plain
+    return Response(stream_with_context(generate_progress()), mimetype='text/plain')
 
 import psutil, os, time
 START_TIME = time.time()

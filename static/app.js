@@ -3656,22 +3656,130 @@ async function checkModelStatus() {
     }
 }
 
-function monitorDownload() {
+function monitorDownload(progEl, btn) {
     const interval = setInterval(async () => {
-        const res = await fetch('/api/download_status');
-        const data = await res.json();
-
-        if (data.is_downloading) {
-            const percent = ((data.progress / data.total) * 100).toFixed(1);
-            // 这里可以替换成页面上好看的进度条 UI
-            console.log(`正在下载模型: ${percent}%`);
-        } else if (data.finished) {
-            clearInterval(interval);
-            alert("模型下载完成！请刷新页面开始对话。");
-            location.reload();
-        } else if (data.error) {
-            clearInterval(interval);
-            alert("下载失败: " + data.error);
+        try {
+            const res = await fetch('/api/download_status');
+            const data = await res.json();
+            if (data.is_downloading) {
+                if (data.total > 0) {
+                    const percent = ((data.progress / data.total) * 100).toFixed(1);
+                    progEl.textContent = `正在下载: ${percent}%`;
+                }
+                progEl.style.display = 'block';
+                btn.textContent = '下载中...';
+            } else if (data.finished) {
+                clearInterval(interval);
+                progEl.textContent = "✅ 模型下载完成，即将自动刷新加载...";
+                btn.textContent = '完成';
+                btn.style.background = '#4caf50';
+                setTimeout(() => location.reload(), 2000);
+            } else if (data.error) {
+                clearInterval(interval);
+                progEl.textContent = "❌ 下载失败: " + data.error;
+                btn.textContent = '重试下载';
+                btn.disabled = false;
+            }
+        } catch (e) {
+            console.error("获取下载状态失败", e);
         }
     }, 1000);
 }
+
+// ==================== 启动 ====================
+(async () => {
+  // 1. 检查模型
+  try {
+    const modelRes = await fetch('/api/check_model');
+    const modelData = await modelRes.json();
+    
+    if (!modelData.exists) {
+      addMsg("⚠️ 系统提示：未检测到本地模型。请点击下方按钮一键下载。", "ai");
+      
+      const btnRow = document.createElement('div');
+      btnRow.className = 'msg-row ai';
+      
+      const avatar = document.createElement('div');
+      avatar.className = 'avatar'; 
+      avatar.textContent = 'M';
+      
+      const div = document.createElement('div');
+      div.className = 'msg ai';
+      
+      div.innerHTML = `
+        <button id="dlModelBtn" style="padding: 8px 16px; background: var(--accent); color: white; border: none; border-radius: 6px; cursor: pointer; font-weight: bold;">
+          一键下载并加载
+        </button>
+        <pre id="dlProgress" style="margin-top: 10px; color: #4caf50; font-size: 13px; display: none;"></pre>
+      `;
+      
+      btnRow.appendChild(avatar);
+      btnRow.appendChild(div);
+      chat.appendChild(btnRow); 
+      chat.scrollTop = chat.scrollHeight;
+
+      document.getElementById('dlModelBtn').addEventListener('click', async function() {
+        const btn = this;
+        const progEl = document.getElementById('dlProgress');
+        
+        btn.disabled = true;
+        btn.textContent = '正在启动下载...';
+        btn.style.background = '#888';
+        
+        try {
+          const response = await fetch('/api/download_model', { method: 'POST' });
+          const result = await response.json();
+          
+          if (result.ok) {
+            monitorDownload(progEl, btn);
+          } else {
+            alert(result.error);
+            btn.disabled = false;
+            btn.textContent = '重试';
+            btn.style.background = 'var(--accent)';
+          }
+        } catch (e) {
+           alert("请求失败: " + e.message);
+           btn.disabled = false;
+           btn.textContent = '重试';
+           btn.style.background = 'var(--accent)';
+        }
+      });
+    }
+  } catch (e) {
+    console.error("模型检测失败", e);
+  }
+
+  // 2. 原本的启动代码
+  let s = {};
+  try { s = await (await fetch('/settings')).json(); } catch (e) {}
+  applyTheme(s.theme || 'dark');
+  if (s.force_web) document.getElementById('web').checked = true;
+  if (s.auto_speak) { document.getElementById('autoSpeak').checked = true; autoSpeak = true; }
+  loadTemplates(s.templates);
+  loadParamsFromSettings(s);
+  await loadUsers();
+  await loadSessions();
+  await updateRagStatus();
+  
+  const list = await (await fetch('/sessions')).json();
+  if (s.last_session && list.find(x => x.id === s.last_session)) {
+    await switchSession(s.last_session);
+  } else if (list.length > 0) {
+    await switchSession(list[0].id);
+  } else {
+    await newSession();
+  }
+  
+  if (s.current_model) {
+    for (const opt of modelSelect.options) {
+      if (opt.value === s.current_model) {
+        modelSelect.value = s.current_model;
+        break;
+      }
+    }
+  }
+  
+  input.focus();
+  autoGrow();
+})();

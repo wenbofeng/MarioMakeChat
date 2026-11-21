@@ -6,7 +6,7 @@
 [![Release](https://img.shields.io/github/v/release/wenbofeng/MarioMakeChat)](https://github.com/wenbofeng/MarioMakeChat/releases)
 [![Star](https://img.shields.io/github/stars/wenbofeng/MarioMakeChat?style=social)](https://github.com/wenbofeng/MarioMakeChat)
 
-> ⚡ 完全离线、无需联网、保护隐私的 AI 助手。基于 Qwen2.5 与 Flask 打造，支持本地 RAG 知识库、Ollama 热切换、多模态视觉，内置**Scratch 极速联动**与**微积分扩展**！现已完美支持 macOS 与 Windows 双平台独立运行。
+> ⚡ 完全离线、无需联网、保护隐私的 AI 助手。基于 Qwen2.5 与 Flask 打造，支持本地 RAG 知识库、Ollama 热切换、多模态视觉，内置 **Scratch 极速联动** 与 **微积分扩展**！现已完美支持 macOS 与 Windows 双平台独立运行。
 
 ## 🚀 V10.3.0 Pro 2FS 震撼发布
 本次更新将“墨墨”的易用性与可玩性推向了新高度：
@@ -29,9 +29,35 @@
 *(进入页面后，点击最新一次绿色的 `Build Windows EXE` 记录，在页面最底部点击 `MarioMakeChat-Windows.zip` 即可下载)*
 
 ### 🐧 Linux / 源码开发者
-推荐直接克隆源码运行（请确保安装 Python 3.10+）：
-```bash
-git clone https://github.com/wenbofeng/MarioMakeChat.git
-cd MarioMakeChat
-chmod +x install.sh
-./install.sh
+推荐直接克隆源码运行（请确保安装 Python 3.10+）。在终端依次执行：
+`git clone https://github.com/wenbofeng/MarioMakeChat.git`
+`cd MarioMakeChat`
+`chmod +x install.sh`
+`./install.sh`
+
+## ✨ 核心特性 (Features)
+- 🧠 **完全离线**：基于 llama-cpp-python 与 Ollama，断网状态下依然能陪你聊天。
+- 🔄 **多模型热切换**：网页端一键下载并切换 1.5B/3B 模型。
+- 📚 **本地知识库 (RAG)**：支持上传 PDF/TXT/MD，让 AI 基于你的私有文档回答。
+- 🎮 **Scratch 联动**：支持 TurboWarp，内置 `momo-extension.js`，通过 WebSocket 让你的游戏角色拥有极低延迟的 AI 大脑。
+- 🧮 **微积分扩展**：内置 `calculus-extension.js`，在 Scratch 里画泰勒展开曲线！
+- 🎨 **极客定制**：支持情绪感知、自定义人设、代码高亮、多用户隔离、划词助手与快捷指令。
+
+## 🚀 极客整活 (Geek Out)
+本项目的底层大模型引擎基于 **llama.cpp** 编译。在 Mac 环境下，我们成功编译了纯血 C++ 引擎，并实现了极速本地推理。
+- **纯本地模型调用**：在没有 Python 中间件的情况下，引擎依然能以 **4.7 t/s** 的速度输出内容。
+- **Minecraft 自动化联动**：通过 Python 脚本监听、调用本地 API，并利用 Mac 原生 AppleScript 将 AI 的指令直接输入到《我的世界》聊天框中，实现“赛博言出法随”。
+
+## 🙏 致谢 (Credits)
+本项目之所以能够完全离线运行，得益于以下开源团队的无私奉献：
+- **Qwen 团队**：感谢阿里云开源 Qwen2.5 模型。
+  *特别感谢 Qwen2.5 技术报告的 58 位底层研发者：杨安、杨宝松、惠斌元、郑波、余博文、常周、李成鹏、李成远、刘大一恒、黄飞、董冠廷、魏浩然、林焕、唐家龙、王家林、杨健、屠建宏、张建伟、马建新、徐金泽、周景仁、白金泽、何金正、林俊阳、党凯、陆克明、陈克勤、杨可欣、李梅、薛明峰、倪娜、张培、王鹏、彭茹、门锐、高瑞泽、林润吉、王士杰、白帅、谭斯南、朱天航、李天浩、刘天宇、葛文斌、邓晓东、周小欢、任兴章、张新宇、魏希品、任宣成、范杨、姚洋、张宜昌、万宇、褚云飞、刘玉琼、崔泽宇、张真如、范志豪。*
+- **llama.cpp 团队**：感谢 ggml-org 提供底层 C++ 推理引擎。
+- **开源社区**：感谢所有在开源社区默默奉献的极客们。
+
+## 📄 开源协议 (License)
+本项目采用 [MIT License](LICENSE) 协议开源。你可以自由地使用、修改和分发。
+
+---
+*Made with ❤️ by FMC SMO (A 3rd-grade developer)*
+*如果这个项目对你有帮助，欢迎点一个 ⭐ Star 支持一下！*

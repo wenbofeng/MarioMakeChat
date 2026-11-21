@@ -374,7 +374,7 @@ function createStreamingMsg() {
   const row = document.createElement('div');
   row.className = 'msg-row ai';
   const avatar = document.createElement('div');
-  avatar.className = 'avatar'; avatar.textContent = 'M';
+  avatar.className = 'avatar'; avatar.textContent = '墨';
   const div = document.createElement('div');
   div.className = 'msg ai streaming';
   // 初始三点动画
@@ -3688,69 +3688,7 @@ function monitorDownload(progEl, btn) {
 
 // ==================== 启动 ====================
 (async () => {
-  // 1. 检查模型
-  try {
-    const modelRes = await fetch('/api/check_model');
-    const modelData = await modelRes.json();
-    
-    if (!modelData.exists) {
-      addMsg("⚠️ 系统提示：未检测到本地模型。请点击下方按钮一键下载。", "ai");
-      
-      const btnRow = document.createElement('div');
-      btnRow.className = 'msg-row ai';
-      
-      const avatar = document.createElement('div');
-      avatar.className = 'avatar'; 
-      avatar.textContent = 'M';
-      
-      const div = document.createElement('div');
-      div.className = 'msg ai';
-      
-      div.innerHTML = `
-        <button id="dlModelBtn" style="padding: 8px 16px; background: var(--accent); color: white; border: none; border-radius: 6px; cursor: pointer; font-weight: bold;">
-          一键下载并加载
-        </button>
-        <pre id="dlProgress" style="margin-top: 10px; color: #4caf50; font-size: 13px; display: none;"></pre>
-      `;
-      
-      btnRow.appendChild(avatar);
-      btnRow.appendChild(div);
-      chat.appendChild(btnRow); 
-      chat.scrollTop = chat.scrollHeight;
-
-      document.getElementById('dlModelBtn').addEventListener('click', async function() {
-        const btn = this;
-        const progEl = document.getElementById('dlProgress');
-        
-        btn.disabled = true;
-        btn.textContent = '正在启动下载...';
-        btn.style.background = '#888';
-        
-        try {
-          const response = await fetch('/api/download_model', { method: 'POST' });
-          const result = await response.json();
-          
-          if (result.ok) {
-            monitorDownload(progEl, btn);
-          } else {
-            alert(result.error);
-            btn.disabled = false;
-            btn.textContent = '重试';
-            btn.style.background = 'var(--accent)';
-          }
-        } catch (e) {
-           alert("请求失败: " + e.message);
-           btn.disabled = false;
-           btn.textContent = '重试';
-           btn.style.background = 'var(--accent)';
-        }
-      });
-    }
-  } catch (e) {
-    console.error("模型检测失败", e);
-  }
-
-  // 2. 原本的启动代码
+  // 1. 原本的启动代码
   let s = {};
   try { s = await (await fetch('/settings')).json(); } catch (e) {}
   applyTheme(s.theme || 'dark');
@@ -3782,4 +3720,98 @@ function monitorDownload(progEl, btn) {
   
   input.focus();
   autoGrow();
+
+    // 👇👇👇 V10.3.0 多模型选择下载器 👇👇👇
+  try {
+    const modelRes = await fetch('/api/check_model');
+    const modelData = await modelRes.json();
+    
+    // 只有当没有任何模型时，才显示下载面板
+    if (!modelData.exists) {
+      addMsg("⚠️ 系统提示：未检测到本地模型。请从下方选择一个模型进行下载（推荐 1.5B Q4 极速版）。", "ai");
+      
+      const btnRow = document.createElement('div');
+      btnRow.className = 'msg-row ai';
+      const avatar = document.createElement('div');
+      avatar.className = 'avatar'; 
+      avatar.textContent = '墨';
+      
+      const div = document.createElement('div');
+      div.className = 'msg ai';
+      
+      // 动态生成模型列表
+      const modelsToDownload = [
+        { key: "1.5B Q4_K_M", desc: "日常主力，质量与速度兼顾", size: "约 1GB" },
+        { key: "1.5B Q2_K", desc: "极限省内存，适合低配电脑", size: "约 700MB" },
+        { key: "3B Q4_K_M", desc: "智商更高，适合复杂任务", size: "约 2GB" }
+      ];
+      
+      let listHtml = `<div style="display: flex; flex-direction: column; gap: 10px; margin-top: 10px;">`;
+      modelsToDownload.forEach(m => {
+        listHtml += `
+          <div style="display: flex; justify-content: space-between; align-items: center; border: 1px solid var(--border); padding: 10px; border-radius: 8px;">
+            <div>
+              <div style="font-weight: bold; color: var(--accent);">${m.key}</div>
+              <div style="font-size: 12px; color: #888;">${m.desc} · ${m.size}</div>
+            </div>
+            <button class="dl-btn" data-model="${m.key}" style="padding: 6px 12px; background: var(--accent); color: white; border: none; border-radius: 6px; cursor: pointer;">下载</button>
+          </div>
+        `;
+      });
+      // 顺便加一个 Ollama 的说明
+      listHtml += `
+        <div style="font-size: 12px; color: #888; margin-top: 5px;">
+          * 若需使用 Qwen3-1.7B 思考模型，请前往终端运行 <code>ollama run qwen3:1.7b</code>
+        </div>
+      </div>
+      <pre id="dlProgress" style="margin-top: 10px; color: #4caf50; font-size: 13px; white-space: pre-wrap; display: none;"></pre>
+      `;
+      
+      div.innerHTML = listHtml;
+      btnRow.appendChild(avatar);
+      btnRow.appendChild(div);
+      chat.appendChild(btnRow); 
+      chat.scrollTop = chat.scrollHeight;
+
+      // 给所有下载按钮绑定事件
+      const dlButtons = div.querySelectorAll('.dl-btn');
+      const progEl = document.getElementById('dlProgress');
+      
+      dlButtons.forEach(btn => {
+        btn.addEventListener('click', async function() {
+          const modelKey = this.getAttribute('data-model');
+          
+          // 禁用所有按钮
+          dlButtons.forEach(b => { b.disabled = true; b.style.background = '#888'; b.textContent = '等待'; });
+          this.textContent = '启动中...';
+          
+          progEl.style.display = 'block';
+          progEl.textContent = `正在准备下载 ${modelKey}...`;
+          
+          try {
+            const response = await fetch('/api/download_model', { 
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ model_key: modelKey })
+            });
+            const result = await response.json();
+            
+            if (result.ok) {
+              monitorDownload(progEl, this); // 开始轮询进度
+            } else {
+              alert(result.error);
+              dlButtons.forEach(b => { b.disabled = false; b.style.background = 'var(--accent)'; b.textContent = '下载'; });
+            }
+          } catch (e) {
+             alert("请求失败: " + e.message);
+             dlButtons.forEach(b => { b.disabled = false; b.style.background = 'var(--accent)'; b.textContent = '下载'; });
+          }
+        });
+      });
+    }
+  } catch (e) {
+    console.error("模型检测失败", e);
+  }
+  // 👆👆👆 多模型选择下载器结束 👆👆👆
+  
 })();

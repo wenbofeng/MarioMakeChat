@@ -1,4 +1,6 @@
 import os
+
+from torch import NoneType
 os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
 os.environ["OMP_NUM_THREADS"] = "1"
 os.environ["MKL_NUM_THREADS"] = "1"
@@ -27,7 +29,6 @@ import subprocess
 import shutil
 import zipfile
 
-import os
 import sys
 
 # ==========================================
@@ -482,9 +483,7 @@ else:
     else:
         BASE = os.path.join(os.path.dirname(__file__), "master")
 
-import os
 import sys
-import threading
 import time # 确保顶部有导入
 
 # 1. 定义模型存放路径（沿用你选定的 Documents 目录）
@@ -538,10 +537,14 @@ def download_model_background():
     finally:
         download_status["is_downloading"] = False
 
+# 动态获取当前 server.py 所在的绝对路径
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
 AVAILABLE_MODELS = {
-    "1.5B Q4_K_M": f"{BASE}/qwen2.5-1.5b-instruct-q4_k_m.gguf",
-    "1.5B Q2_K": f"{BASE}/qwen2.5-1.5b-instruct-q2_k.gguf",
-    "3B Q4_K_M": f"{BASE}/qwen2.5-3b-instruct-q4_k_m.gguf",
+    # 注意：这里的文件名必须和你 models 文件夹里真实存在的文件名一模一样！
+    "1.5B Q4_K_M": os.path.join(BASE_DIR, "models", "1.5b_q4_k_m.gguf"),
+    "1.5B Q2_K": os.path.join(BASE_DIR, "models", "1.5b_q2_k.gguf"),
+    "3B Q4_K_M": os.path.join(BASE_DIR, "models", "3b_q4_k_m.gguf"), # 👈 咱们下载脚本生成的名字
     "Qwen3-1.7B 🧠思考": "ollama:qwen3:1.7b",
 }
 DEFAULT_MODEL = "3B Q4_K_M"
@@ -1307,6 +1310,10 @@ def execute_local_tools(text):
 def generate_stream(text, model_name, force_web, has_file, is_temp, temp_id, think_mode, reasoning_effort="high",image_base64=None):
     global current_session_id
 
+    if model_manager.current_engine == "llama_cpp" and model_manager.llm is None:
+        yield "\n⚠️ 系统错误：没有找到本地模型！请检查右上角的模型列表，或使用一键下载功能。"
+        return    
+
     # 👇 👇 👇 插入开始 👇 👇 👇
     # 根据思考深度动态修改 Prompt
     if reasoning_effort == "max":
@@ -1472,7 +1479,9 @@ def generate_stream(text, model_name, force_web, has_file, is_temp, temp_id, thi
         mt = int(settings.get("max_tokens", MAX_TOKENS))
         temp = float(settings.get("temperature", TEMPERATURE))
         tp = float(settings.get("top_p", TOP_P))
-        stream = llm(
+        
+        # 👇 核心修改：不要用全局 llm，用咱们的 model_manager 管家！
+        stream = model_manager.generate_stream(
             prompt,
             max_tokens=mt,
             temperature=temp,
@@ -1481,16 +1490,17 @@ def generate_stream(text, model_name, force_web, has_file, is_temp, temp_id, thi
             frequency_penalty=0.3,
             presence_penalty=0.1,
             stop=["<|im_end|>", "<|im_start|>"],
-            echo=False,
-            stream=True
+            echo=False
         )
-        print(f"🔍 调试：llm 开始流式生成...")
-        for chunk in stream:
-            token = chunk["choices"][0]["text"]
+        print(f"🔍 调试：model_manager 开始流式生成...")
+        
+        # 👇 注意：model_manager.generate_stream 直接吐出的是文本 token，不再是字典！
+        for token in stream: 
             if not token:
                 continue
             full_reply += token
             yield cc.convert(token) if OPENCC_AVAILABLE else token
+            
     except Exception as e:
         import traceback
         traceback.print_exc()
@@ -1755,7 +1765,14 @@ def rename_user():
 def index():
     return render_template("index.html")
 
-import threading
+@app.route("/api/check_model", methods=["GET"])
+def check_model():
+    model_dir = os.path.join(os.getcwd(), "models")
+    if os.path.exists(model_dir):
+        gguf_files = [f for f in os.listdir(model_dir) if f.endswith('.gguf')]
+        if gguf_files:
+            return jsonify({"exists": True, "model_name": gguf_files[0]})
+    return jsonify({"exists": False})
 
 # 全局下载状态
 download_state = {
@@ -1766,64 +1783,7 @@ download_state = {
     "error": None
 }
 
-def background_download_task(url, save_path):
-    global download_state
-    try:
-        import requests
-        download_state["is_downloading"] = True
-        download_state["finished"] = False
-        download_state["error"] = None
-        
-        response = requests.get(url, stream=True)
-        download_state["total"] = int(response.headers.get('content-length', 0))
-        
-        with open(save_path, 'wb') as f:
-            for chunk in response.iter_content(chunk_size=1024*1024):
-                if chunk:
-                    f.write(chunk)
-                    download_state["progress"] += len(chunk)
-                    
-        download_state["finished"] = True
-        
-        # 下载完成后，直接热加载模型
-        try:
-            model_manager.load_local_gguf("1.5B Q4_K_M", save_path)
-            print("✅ 后台下载完毕，模型已自动热加载！")
-        except Exception as e:
-            print(f"下载成功但加载失败: {e}")
-            
-    except Exception as e:
-        download_state["error"] = str(e)
-    finally:
-        download_state["is_downloading"] = False
-
 # ================= 路由 =================
-
-@app.route("/api/download_model", methods=["POST"])
-def start_download_model():
-    global download_state
-    if download_state["is_downloading"]:
-        return jsonify({"error": "正在下载中，请勿重复点击"}), 400
-        
-    model_dir = os.path.join(os.getcwd(), "models")
-    os.makedirs(model_dir, exist_ok=True)
-    save_path = os.path.join(model_dir, "qwen2.5-1.5b-instruct-q4_k_m.gguf")
-    
-    url = "https://modelscope.cn/api/v1/models/Qwen/Qwen2.5-1.5B-Instruct-GGUF/repo?Revision=master&FilePath=qwen2.5-1.5b-instruct-q4_k_m.gguf"
-    
-    download_state = {"is_downloading": True, "progress": 0, "total": 0, "finished": False, "error": None}
-    
-    # 开启后台线程去下载，不阻塞 Flask 主线程
-    threading.Thread(target=background_download_task, args=(url, save_path), daemon=True).start()
-    
-    return jsonify({"ok": True, "message": "后台下载任务已启动"})
-
-@app.route("/api/download_status", methods=["GET"])
-def get_download_status():
-    return jsonify(download_state)
-
-import requests
-import os
 
 @app.route("/api/download_model", methods=["GET"])
 def download_model():
@@ -2790,6 +2750,83 @@ def scratch_websocket(ws):
                 ws.send(reply)
     except Exception as e:
         print(f"🔴 Scratch WebSocket 断开或出错: {e}")
+
+# 定义可下载的模型库
+MODEL_DOWNLOAD_URLS = {
+    "1.5B Q4_K_M": "https://modelscope.cn/api/v1/models/Qwen/Qwen2.5-1.5B-Instruct-GGUF/repo?Revision=master&FilePath=qwen2.5-1.5b-instruct-q4_k_m.gguf",
+    "1.5B Q2_K": "https://modelscope.cn/api/v1/models/Qwen/Qwen2.5-1.5B-Instruct-GGUF/repo?Revision=master&FilePath=qwen2.5-1.5b-instruct-q2_k.gguf",
+    "3B Q4_K_M": "https://modelscope.cn/api/v1/models/Qwen/Qwen2.5-3B-Instruct-GGUF/repo?Revision=master&FilePath=qwen2.5-3b-instruct-q4_k_m.gguf"
+}
+
+download_state = {
+    "is_downloading": False,
+    "progress": 0,
+    "total": 0,
+    "finished": False,
+    "error": None,
+    "current_model": ""
+}
+
+def background_download_task(model_key, url, save_path):
+    global download_state
+    try:
+        download_state["is_downloading"] = True
+        download_state["finished"] = False
+        download_state["error"] = None
+        download_state["progress"] = 0
+        download_state["current_model"] = model_key
+        
+        response = requests.get(url, stream=True)
+        download_state["total"] = int(response.headers.get('content-length', 0))
+        
+        with open(save_path, 'wb') as f:
+            for chunk in response.iter_content(chunk_size=1024*1024):
+                if chunk:
+                    f.write(chunk)
+                    download_state["progress"] += len(chunk)
+                    
+        download_state["finished"] = True
+        
+        # 下载完成后自动加载
+        try:
+            model_manager.load_local_gguf(model_key, save_path)
+            print(f"✅ 后台下载完毕，模型 {model_key} 已自动热加载！")
+        except Exception as e:
+            print(f"下载成功但加载失败: {e}")
+            
+    except Exception as e:
+        download_state["error"] = str(e)
+    finally:
+        download_state["is_downloading"] = False
+
+@app.route("/api/download_model", methods=["POST"])
+def start_download_model():
+    global download_state
+    if download_state["is_downloading"]:
+        return jsonify({"error": "正在下载中，请勿重复点击"}), 400
+        
+    data = request.json or {}
+    model_key = data.get("model_key")
+    
+    if model_key not in MODEL_DOWNLOAD_URLS:
+        return jsonify({"error": "无效的模型选择"}), 400
+        
+    model_dir = os.path.join(os.getcwd(), "models")
+    os.makedirs(model_dir, exist_ok=True)
+    # 将模型名里的空格替换成下划线，作为文件名
+    filename = model_key.replace(" ", "_").lower() + ".gguf"
+    save_path = os.path.join(model_dir, filename)
+    
+    url = MODEL_DOWNLOAD_URLS[model_key]
+    
+    download_state = {"is_downloading": True, "progress": 0, "total": 0, "finished": False, "error": None, "current_model": model_key}
+    threading.Thread(target=background_download_task, args=(model_key, url, save_path), daemon=True).start()
+    
+    return jsonify({"ok": True, "message": f"{model_key} 下载任务已启动"})
+
+@app.route("/api/download_status", methods=["GET"])
+def get_download_status():
+    return jsonify(download_state)
 
 if __name__ == "__main__":
     threading.Thread(target=wait_for_server, daemon=True).start()

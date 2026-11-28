@@ -35,12 +35,6 @@ Check the README for download links!
 *   **安装步骤**：双击挂载 dmg，将“墨墨AI”拖入 Applications 文件夹。
 *   **⚠️ 解除拦截**：首次打开若提示“已损坏”，请在终端运行：
     `sudo xattr -cr /Applications/墨墨AI.app`
-
-### 🪟 Windows 用户 (Windows 10/11)
-👉 **请点击此处下载：[前往 Actions 获取最新的 Windows 安装包](https://github.com/wenbofeng/MarioMakeChat/actions)**
-*(进入页面后，点击最新一次绿色的 `Build Windows EXE` 记录，在页面最底部点击 `MarioMakeChat-Windows.zip` 即可下载)*
-👉 **下载 `墨墨AI_v10.3.0.dmg`** *(或使用夸克网盘链接)*
-
 1. 下载 `.dmg` 文件后双击打开。
 2. 将 **墨墨AI.app** 拖拽到 **Applications (应用程序)** 文件夹中。
 3. **⚠️ 首次启动提示“已损坏”？** 由于本项目为个人开源项目，未购买苹果开发者签名。请打开 Mac 终端，运行以下命令解除拦截：

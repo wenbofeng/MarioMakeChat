@@ -1785,51 +1785,6 @@ download_state = {
 
 # ================= 路由 =================
 
-@app.route("/api/download_model", methods=["GET"])
-def download_model():
-    """流式下载模型并实时返回进度"""
-    model_dir = os.path.join(os.getcwd(), "models")
-    os.makedirs(model_dir, exist_ok=True)
-    
-    model_path = os.path.join(model_dir, "qwen2.5-1.5b-instruct-q4_k_m.gguf")
-    if os.path.exists(model_path):
-        return "✅ 模型已存在，无需下载！", 200
-
-    # 国内推荐使用魔搭（ModelScope）的直链，速度比 HuggingFace 快得多
-    # 这是 Qwen2.5-1.5B-Instruct 的 Q4_K_M 版本
-    model_url = "https://modelscope.cn/api/v1/models/Qwen/Qwen2.5-1.5B-Instruct-GGUF/repo?Revision=master&FilePath=qwen2.5-1.5b-instruct-q4_k_m.gguf"
-
-    def generate_progress():
-        try:
-            # 使用流式请求下载
-            response = requests.get(model_url, stream=True, timeout=30)
-            total_size = int(response.headers.get('content-length', 0))
-            downloaded_size = 0
-            
-            yield "开始下载...\n"
-            
-            with open(model_path, 'wb') as f:
-                # 每次下载 1MB 的块
-                for chunk in response.iter_content(chunk_size=1024 * 1024):
-                    if chunk:
-                        f.write(chunk)
-                        downloaded_size += len(chunk)
-                        # 计算百分比
-                        if total_size > 0:
-                            percent = (downloaded_size / total_size) * 100
-                            # 实时向前端发送进度
-                            yield f"下载进度: {percent:.1f}% ({downloaded_size / (1024*1024):.1f}MB / {total_size / (1024*1024):.1f}MB)\n"
-            
-            yield "\n✅ 模型下载并解压完成！请重启软件或刷新页面。"
-        except Exception as e:
-            # 如果下载失败，把残缺文件删掉
-            if os.path.exists(model_path):
-                os.remove(model_path)
-            yield f"\n❌ 下载失败: {str(e)}\n"
-
-    # 返回流式响应，mimetype 设为 text/plain
-    return Response(stream_with_context(generate_progress()), mimetype='text/plain')
-
 import psutil, os, time
 START_TIME = time.time()
 
@@ -2751,6 +2706,8 @@ def scratch_websocket(ws):
     except Exception as e:
         print(f"🔴 Scratch WebSocket 断开或出错: {e}")
 
+# ================= V10.3.0 多模型下载核心逻辑 =================
+
 # 定义可下载的模型库
 MODEL_DOWNLOAD_URLS = {
     "1.5B Q4_K_M": "https://modelscope.cn/api/v1/models/Qwen/Qwen2.5-1.5B-Instruct-GGUF/repo?Revision=master&FilePath=qwen2.5-1.5b-instruct-q4_k_m.gguf",
@@ -2799,35 +2756,59 @@ def background_download_task(model_key, url, save_path):
     finally:
         download_state["is_downloading"] = False
 
+# 确保这个字典存在，并且包含了你要下载的模型链接
+MODEL_DOWNLOAD_URLS = {
+    "1.5B Q4_K_M": "https://modelscope.cn/api/v1/models/Qwen/Qwen2.5-1.5B-Instruct-GGUF/repo?Revision=master&FilePath=qwen2.5-1.5b-instruct-q4_k_m.gguf",
+    "1.5B Q2_K": "https://modelscope.cn/api/v1/models/Qwen/Qwen2.5-1.5B-Instruct-GGUF/repo?Revision=master&FilePath=qwen2.5-1.5b-instruct-q2_k.gguf",
+    "3B Q4_K_M": "https://modelscope.cn/api/v1/models/Qwen/Qwen2.5-3B-Instruct-GGUF/repo?Revision=master&FilePath=qwen2.5-3b-instruct-q4_k_m.gguf"
+}
+
+# 全局下载状态字典（如果前面已经定义过，不用重复定义，直接跳过这里）
+if 'download_state' not in globals():
+    download_state = {
+        "is_downloading": False, "progress": 0, "total": 0, 
+        "finished": False, "error": None, "current_model": ""
+    }
+
+# 👇👇👇 这就是你要保留的唯一 POST 路由 👇👇👇
 @app.route("/api/download_model", methods=["POST"])
 def start_download_model():
     global download_state
-    if download_state["is_downloading"]:
-        return jsonify({"error": "正在下载中，请勿重复点击"}), 400
+    
+    # 防止并发冲突
+    if download_state.get("is_downloading"):
+        return jsonify({"error": "后台正在下载其他模型，请稍候"}), 400
         
     data = request.json or {}
     model_key = data.get("model_key")
     
+    # 校验模型名字是否合法
     if model_key not in MODEL_DOWNLOAD_URLS:
         return jsonify({"error": "无效的模型选择"}), 400
         
     model_dir = os.path.join(os.getcwd(), "models")
     os.makedirs(model_dir, exist_ok=True)
-    # 将模型名里的空格替换成下划线，作为文件名
+    
+    # 核心修复：动态生成文件名（解决之前所有模型都下成1.5B的问题）
     filename = model_key.replace(" ", "_").lower() + ".gguf"
     save_path = os.path.join(model_dir, filename)
-    
     url = MODEL_DOWNLOAD_URLS[model_key]
     
-    download_state = {"is_downloading": True, "progress": 0, "total": 0, "finished": False, "error": None, "current_model": model_key}
+    # 重置状态并开启后台线程
+    download_state = {
+        "is_downloading": True, "progress": 0, "total": 0, 
+        "finished": False, "error": None, "current_model": model_key
+    }
     threading.Thread(target=background_download_task, args=(model_key, url, save_path), daemon=True).start()
     
     return jsonify({"ok": True, "message": f"{model_key} 下载任务已启动"})
 
+# 顺便检查一下这个 GET 路由是不是也只有一个
 @app.route("/api/download_status", methods=["GET"])
 def get_download_status():
     return jsonify(download_state)
+# ==========================================================
 
 if __name__ == "__main__":
     threading.Thread(target=wait_for_server, daemon=True).start()
-    app.run(host="127.0.0.1", port=5001, debug=False, use_reloader=False)
+    app.run(host="localhost", port=5001, debug=False, use_reloader=False)

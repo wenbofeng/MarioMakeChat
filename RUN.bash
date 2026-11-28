@@ -1,58 +1,56 @@
 #!/bin/bash
-cd "$(dirname "$0")"
+# ==========================================
+# MarioMakeChat V10.3.0 智能启动脚本
+# ==========================================
 
-# 参数解析
-DAEMON=0
-LOG_FILE="/tmp/mmai.log"
-for arg in "$@"; do
-  case "$arg" in
-    -d|--daemon) DAEMON=1 ;;
-    -h|--help)
-      echo "用法："
-      echo "  ./RUN.bash          前台运行（Ctrl+C 停止）"
-      echo "  ./RUN.bash -d       后台运行，日志写到 $LOG_FILE"
-      echo "  ./RUN.bash -d -f    后台运行并 tail 日志"
-      exit 0
-      ;;
-    -f|--follow) FOLLOW=1 ;;
-  esac
-done
+# 终端颜色配置
+GREEN='\033[0;32m'
+BLUE='\033[0;34m'
+RED='\033[0;31m'
+NC='\033[0m' # No Color
 
-# 清理占用 5001 的进程
-lsof -ti:5001 | xargs kill -9 2>/dev/null
-sleep 1
+echo -e "${BLUE}==========================================${NC}"
+echo -e "${BLUE}   🎂 MarioMakeChat V10.3.0 Birthday Ed.  ${NC}"
+echo -e "${BLUE}==========================================${NC}"
 
-# 离线环境
-export HF_HUB_OFFLINE=1
-export TRANSFORMERS_OFFLINE=1
-export TOKENIZERS_PARALLELISM=false
-export HF_ENDPOINT=https://hf-mirror.com
-
-# 找 Python：优先 qwen_env，其次当前 conda 环境，最后系统 python3
-QWEN_PY="$HOME/opt/miniconda3/envs/qwen_env/bin/python"
-# 或者用 conda 的路径
-QWEN_PY="$(conda info --base 2>/dev/null)/envs/qwen_env/bin/python"
-
-if [ -x "$QWEN_PY" ]; then
-  PYTHON="$QWEN_PY"
-elif [ -n "$CONDA_PREFIX" ] && [ -x "$CONDA_PREFIX/bin/python" ]; then
-  PYTHON="$CONDA_PREFIX/bin/python"
-elif command -v python3 >/dev/null 2>&1; then
-  PYTHON="$(command -v python3)"
-else
-  echo "❌ 找不到 Python"
-  exit 1
+# 1. 检查 Node.js 并进行全栈语法体检
+if command -v node &> /dev/null
+then
+    if [ -f "omni-check.js" ]; then
+        echo -e "\n🔍 正在执行全栈代码体检..."
+        node omni-check.js
+        if [ $? -ne 0 ]; then
+            echo -e "${RED}🚨 语法检查未通过，请先修复代码！${NC}"
+            exit 1
+        fi
+    fi
 fi
 
-# 前台 or 后台
-if [ "$DAEMON" = "1" ]; then
-  nohup "$PYTHON" server.py > "$LOG_FILE" 2>&1 &
-  echo "✅ 墨墨已在后台启动，PID: $!，日志：$LOG_FILE"
-  echo "   停止：lsof -ti:5001 | xargs kill -9"
-  if [ "$FOLLOW" = "1" ]; then
-    echo "--- 跟踪日志（Ctrl+C 退出）---"
-    tail -f "$LOG_FILE"
-  fi
-else
-  exec "$PYTHON" server.py
+# 2. 清理可能被占用的 5001 端口（防止 Address already in use）
+echo -e "\n🧹 正在清理 5001 端口..."
+PORT_PID=$(lsof -t -i:5001)
+if [ -n "$PORT_PID" ]; then
+    echo -e "发现占用进程 (PID: $PORT_PID)，正在清理..."
+    kill -9 $PORT_PID 2>/dev/null
+    sleep 1
 fi
+
+# 3. 启动 Python 后端
+echo -e "\n🚀 正在启动墨墨 AI..."
+# 如果使用 conda 环境，可以取消下面这行的注释并修改环境名
+# conda activate qwen_env
+
+python server.py &
+SERVER_PID=$!
+
+# 4. 等待服务器启动，然后打开浏览器
+echo -e "\n⏳ 等待服务器就绪..."
+sleep 3
+echo -e "${GREEN}✅ 启动成功！正在打开浏览器...${NC}"
+open "http://127.0.0.1:5001"  # Windows 环境下请改成 start http://127.0.0.1:5001
+
+# 5. 优雅退出：当用户按 Ctrl+C 时，同时关闭后台的 Python 进程
+trap "echo -e '\n🛑 正在关闭墨墨...'; kill $SERVER_PID 2>/dev/null; exit" SIGINT SIGTERM
+
+# 保持脚本运行，监听 Python 进程
+wait $SERVER_PID

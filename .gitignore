@@ -16,4 +16,7 @@ build/
 backups/
 
 # 用户数据
-users/
+users/*.zip
+*.dmg
+*.gguf
+MarioMakeChat-Windows.zip
